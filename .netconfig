@@ -25,3 +25,62 @@
 	sha = 701b9468774a8124ae07cf9a93d68b02cc71b8ff
 	etag = df4417fbbd129594e2afed8e6d6c69229e41b55c6b4986e78bd3fd5e68f24a99
 	weak
+[file "src/elecciones/Agent/src/conicet/Agent"]
+	url = https://github.com/MenosRelato/conicet/tree/main/src/conicet/Agent
+[file "src/elecciones/Agent/src/conicet/Agent/src/conicet/Agent/AgentMessage.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/Agent/AgentMessage.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = f93cb8bddea5b67e03ceea39cec71f85923d25d317bcf6c91974085fc710c225
+	weak
+[file "src/elecciones/Agent/src/conicet/Agent/src/conicet/Agent/AgentMessageRole.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/Agent/AgentMessageRole.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = 3e1333d9564d4631cac71a27ce0685a7a620ba6a83e475b1b59c5fe33b8fbbad
+	weak
+[file "src/elecciones/Agent/src/conicet/Agent/src/conicet/Agent/AgentPrompt.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/Agent/AgentPrompt.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = 3b202d93ac9dddd440863c5bf9d7655818ae2b132b3d54cd9779683a8beed489
+	weak
+[file "src/elecciones/Agent/src/conicet/Agent/src/conicet/Agent/AgentResponse.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/Agent/AgentResponse.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = 8664be95a418f2fd7353766112c8c3d6c4ce5fbd988c613d641cdca5c52e5212
+	weak
+[file "src/elecciones/Agent/src/conicet/Agent/src/conicet/Agent/CachingAgentService.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/Agent/CachingAgentService.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = d45cfd9ab96fbbd106273543545f2af9fa608b1caebee8d2091b5c4281cc1096
+	weak
+[file "src/elecciones/Agent/src/conicet/Agent/src/conicet/Agent/ChatExtensions.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/Agent/ChatExtensions.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = f4f6f67be82fec74a49bae1b6afc85c408a08e4732da4146b661b62c5f5634ac
+	weak
+[file "src/elecciones/Agent/src/conicet/Agent/src/conicet/Agent/CloudAgentService.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/Agent/CloudAgentService.cs
+	sha = fd3cbac5afa3719180021f51699e1cd19bcffcd7
+	etag = 1d92e78612a9b9b0c9636f2bdd49e8c0158ab16bd905c0ed1c1826ee1c8e5f51
+	weak
+[file "src/elecciones/Agent/src/conicet/Agent/src/conicet/Agent/IAgentService.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/Agent/IAgentService.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = c0e4e37ab4e335e9e4f1baa043b0a9662b5df88d71d3d8d66ab81a5841ae1e26
+	weak
+[file "src/elecciones/System/src/conicet/System"]
+	url = https://github.com/MenosRelato/conicet/tree/main/src/conicet/System
+[file "src/elecciones/System/src/conicet/System/src/conicet/System/Base62.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/System/Base62.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = 045b9e458f11f846ae9a3979b8122c68173405fb5451083d4993f94004e60e76
+	weak
+[file "src/elecciones/System/src/conicet/System/src/conicet/System/ConfigurationExtensions.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/System/ConfigurationExtensions.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = 2d7b5ad2186951ddc10b9c83b90ecc6266b24ac69a9552c550371d08842091a5
+	weak
+[file "src/elecciones/System/src/conicet/System/src/conicet/System/Json.cs"]
+	url = https://github.com/MenosRelato/conicet/blob/main/src/conicet/System/Json.cs
+	sha = 7e0d3f193971d796ad2b1c8813b4e6686ef02949
+	etag = c10041c1bcccb4cf20dd107ad1795ec3fe2db9dca2206432f680e268c73cc864
+	weak
