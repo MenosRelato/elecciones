@@ -17,8 +17,8 @@
 	weak
 [file "src/Directory.Build.props"]
 	url = https://github.com/menosrelato/template/blob/main/src/Directory.Build.props
-	sha = 701b9468774a8124ae07cf9a93d68b02cc71b8ff
-	etag = 3f3fa3463fb75487916d2fcf0d6dbbc89b656df29e25c63e3ba6d717a64622b4
+	sha = c572d5d90d0f1b9e687869a86018ea844f4375a1
+	etag = 296cb220c1726fe53a49eea59d96ca132d3fbdd5e9ddff69d94adcbd19cbc77d
 	weak
 [file "src/Directory.Build.targets"]
 	url = https://github.com/menosrelato/template/blob/main/src/Directory.Build.targets

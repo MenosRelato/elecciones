@@ -24,6 +24,17 @@
     <VersionPrefix Condition="$(VersionPrefix) == ''">42.42.42</VersionPrefix>
   </PropertyGroup>
 
+  <PropertyGroup Label="NuGet">
+    <Authors>Menos Relato</Authors>
+    <Copyright>Copyright (c) Menos Relato and Contributors. All rights reserved.</Copyright>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <GenerateRepositoryUrlAttribute>true</GenerateRepositoryUrlAttribute>
+
+    <PackageOutputPath Condition="'$(PackageOutputPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\bin'))</PackageOutputPath>
+  </PropertyGroup>
+
   <PropertyGroup Label="Version" Condition="$(VersionLabel) != ''">
     <_VersionLabel>$(VersionLabel.Replace('refs/heads/', ''))</_VersionLabel>
     <_VersionLabel Condition="$(_VersionLabel.Contains('refs/pull/'))">$(VersionLabel.TrimEnd('.0123456789'))</_VersionLabel>
