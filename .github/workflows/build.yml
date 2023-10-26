@@ -6,7 +6,7 @@ on:
       - main
   
 env:
-  SdkVersion: 8.0.100-rc.2.23479.6
+  SdkVersion: 8.0.100-rc.2.23502.2
   VersionPrefix: 42.42.${{ github.run_number }}
 
 jobs:
