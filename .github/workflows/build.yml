@@ -1,0 +1,33 @@
+name: build
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  
+env:
+  SdkVersion: 8.0.100-rc.2.23479.6
+  VersionPrefix: 42.42.${{ github.run_number }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🤘 checkout
+        uses: actions/checkout@v2
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ env.SdkVersion }}
+          dotnet-quality: 'preview'
+
+      - name: 📦 pack
+        run: dotnet pack -m:1
+
+      - name: 🚀 sleet
+        env:
+          SLEET_CONNECTION: ${{ secrets.SLEET_CONNECTION }}
+        if: env.SLEET_CONNECTION != ''
+        run: |
+          dotnet tool install -g --version 5.1.3 sleet 
+          sleet push bin --config none -f --verbose -p "SLEET_FEED_CONTAINER=nuget" -p "SLEET_FEED_CONNECTIONSTRING=${{ secrets.SLEET_CONNECTION }}" -p "SLEET_FEED_TYPE=azure" || echo "No packages found"

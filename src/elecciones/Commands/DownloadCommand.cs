@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.ComponentModel;
+using System.Diagnostics;
 using System.IO.Compression;
 using Humanizer;
 using Spectre.Console.Cli;
@@ -6,6 +7,7 @@ using static Spectre.Console.AnsiConsole;
 
 namespace MenosRelato.Commands;
 
+[Description("Descargar el dataset completo de resultados.")]
 internal class DownloadCommand(IHttpClientFactory factory) : AsyncCommand
 {
     //const string paso = "https://www.argentina.gob.ar/sites/default/files/dine-resultados/2023-PROVISORIOS_PASO.zip";

@@ -8,6 +8,7 @@ using Spectre.Console.Cli;
 using static Spectre.Console.AnsiConsole;
 using MenosRelato;
 using Spectre.Console;
+using System.Globalization;
 
 var config = new ConfigurationManager()
     .AddUserSecrets(ThisAssembly.Project.UserSecretsId)
@@ -48,6 +49,7 @@ app.Configure(config =>
 {
     config.SetApplicationName(ThisAssembly.Project.ToolCommandName);
     config.AddCommand<DownloadCommand>("download");
+    config.AddCommand<LoadCommand>("load");
 
 #if DEBUG
     config.PropagateExceptions();
@@ -62,6 +64,7 @@ if (args.Length == 0)
             .Title("Command to run:")
             .AddChoices([
                 "download",
+                "load",
                 "help"
             ]));
 

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "elecciones": {
+      "commandName": "Project",
+      "commandLineArgs": "load -r"
+    }
+  }
+}
