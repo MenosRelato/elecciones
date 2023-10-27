@@ -2,7 +2,7 @@
   "profiles": {
     "elecciones": {
       "commandName": "Project",
-      "commandLineArgs": "load -r"
+      "commandLineArgs": "load"
     }
   }
 }

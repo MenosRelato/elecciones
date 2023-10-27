@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Dapper;
 using Humanizer;
 using Microsoft.Data.Sqlite;
+using Spectre.Console;
 using Spectre.Console.Cli;
 using Superpower;
 using Superpower.Parsers;
@@ -106,6 +107,8 @@ internal class LoadCommand : AsyncCommand<LoadCommand.Settings>
 
         var first = true;
         var header = Array.Empty<string>();
+        var districts = new Dictionary<(int District, int Provincial, int Section), int>();
+
         await foreach (var line in File.ReadLinesAsync(ambitos, Encoding.UTF8))
         {
             if (first)
@@ -121,11 +124,17 @@ internal class LoadCommand : AsyncCommand<LoadCommand.Settings>
 
             if (await db.QueryFirstOrDefaultAsync<int?>(
                     "SELECT rowid FROM Section WHERE DistrictId = @DistrictId AND ProvincialId = @ProvincialId and SectionId = @SectionId",
-                    value) is not { })
+                    value) is not { } districtId)
             {
                 await db.ExecuteAsync(
                     "INSERT INTO Section (DistrictId, ProvincialId, SectionId, DistrictName, ProvincialName, SectionName) VALUES (@DistrictId, @ProvincialId, @SectionId, @DistrictName, @ProvincialName, @SectionName)",
                     value);
+
+                districts[(value.DistrictId, value.ProvincialId, value.SectionId)] = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
+            }
+            else
+            {
+                districts[(value.DistrictId, value.ProvincialId, value.SectionId)] = districtId;
             }
         }
 
@@ -141,6 +150,11 @@ internal class LoadCommand : AsyncCommand<LoadCommand.Settings>
             }
 
             var watch = Stopwatch.StartNew();
+            var tx = db.BeginTransaction();
+            var circuits = new Dictionary<(string Circuit, int Section), int>();
+            var parties = new Dictionary<(int? Party, int? List), int>();
+            //var positions = new Dictionary<int, int>();
+
             await foreach (var line in File.ReadLinesAsync(results, Encoding.UTF8))
             {
                 if (first)
@@ -152,38 +166,69 @@ internal class LoadCommand : AsyncCommand<LoadCommand.Settings>
 
                 count++;
                 var remaining = TimeSpan.FromTicks(watch.Elapsed.Ticks * (total - count) / count);
-
                 ctx.Status = $"Cargando votos {count:N0} de {total:N0} (faltan {remaining.Humanize(culture: es)})";
+
+                // if count is multiple of 1000, update progress bar
+                if (count % 1000 == 0)
+                {
+                    ctx.Status = $"Persistiendo batch de 1000 votos ({count:N0} de {total:N0})";
+                    await tx.CommitAsync();
+                    await tx.DisposeAsync();
+                    tx = db.BeginTransaction();
+                }
 
                 var values = lineParser.Parse(line);
                 var value = CsvSerializer.Deserialize<Ballot>(header, line);
                 Debug.Assert(value != null);
 
-                if (await db.QueryFirstOrDefaultAsync<int?>(
-                                    "SELECT Id FROM Section WHERE DistrictId = @DistrictId AND ProvincialId = @ProvincialId and SectionId = @SectionId",
-                                    value) is not { } section)
+                if (!districts.TryGetValue((value.DistrictId, value.ProvincialId, value.SectionId), out var section))
                     throw new ArgumentException($"No se encontro ambito electoral correspondiente a {value.DistrictName} {value.ProvincialName} {value.SectionName}");
 
-                if (await db.QueryFirstOrDefaultAsync<int?>(
-                        "SELECT Id FROM Circuit WHERE CircuitId = @CircuitId AND SectionId = @section",
-                        new { value.CircuitId, section }) is not { } circuit)
-                {
-                    await db.ExecuteAsync(
-                        "INSERT INTO Circuit (CircuitId, CircuitName, SectionId) VALUES (@CircuitId, @CircuitName, @section)",
-                        new { value.CircuitId, value.CircuitName, section });
+                //if (await db.QueryFirstOrDefaultAsync<int?>(
+                //                    "SELECT Id FROM Section WHERE DistrictId = @DistrictId AND ProvincialId = @ProvincialId and SectionId = @SectionId",
+                //                    value) is not { } section)
+                //    throw new ArgumentException($"No se encontro ambito electoral correspondiente a {value.DistrictName} {value.ProvincialName} {value.SectionName}");
 
-                    circuit = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
+                //var circuit = circuits.GetOrAdd((value.CircuitId, value.SectionId),  out var circuit))
+
+                if (!circuits.TryGetValue((value.CircuitId, value.SectionId), out var circuit))
+                {
+                    if (await db.QueryFirstOrDefaultAsync<int?>(
+                            "SELECT Id FROM Circuit WHERE CircuitId = @CircuitId AND SectionId = @section",
+                            new { value.CircuitId, section }) is { } sqlCircuit)
+                    {
+                        circuit = sqlCircuit;
+                    }
+                    else
+                    {
+                        await db.ExecuteAsync(
+                            "INSERT INTO Circuit (CircuitId, CircuitName, SectionId) VALUES (@CircuitId, @CircuitName, @section)",
+                            new { value.CircuitId, value.CircuitName, section });
+
+                        circuit = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
+                    }
+
+                    circuits[(value.CircuitId, value.SectionId)] = circuit;
                 }
 
-                if (await db.QueryFirstOrDefaultAsync<int?>(
-                        "SELECT Id FROM Party WHERE PartyId = @PartyId AND ListId = @ListId",
-                        value) is not { } party)
+                if (!parties.TryGetValue((value.PartyId, value.ListId), out var party))
                 {
-                    await db.ExecuteAsync(
-                        "INSERT INTO Party (PartyId, PartyName, ListId, ListName) VALUES (@PartyId, @PartyName, @ListId, @ListName)",
-                        value);
+                    if (await db.QueryFirstOrDefaultAsync<int?>(
+                            "SELECT Id FROM Party WHERE PartyId = @PartyId AND ListId = @ListId",
+                            value) is { } sqlParty)
+                    {
+                        party = sqlParty;
+                    }
+                    else
+                    {
+                        await db.ExecuteAsync(
+                            "INSERT INTO Party (PartyId, PartyName, ListId, ListName) VALUES (@PartyId, @PartyName, @ListId, @ListName)",
+                            value);
 
-                    party = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
+                        party = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
+                    }
+
+                    parties[(value.PartyId, value.ListId)] = party;
                 }
 
                 if (await db.QueryFirstOrDefaultAsync<int?>(
@@ -193,24 +238,25 @@ internal class LoadCommand : AsyncCommand<LoadCommand.Settings>
                     await db.ExecuteAsync(
                         "INSERT INTO Position (Id, Name) VALUES (@PositionId, @PositionName)",
                         value);
+                    //positions[value.PositionId] = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
                 }
 
                 // switch expression to assign Kind (enum) from value.Kind (string)
                 var kind = value.Kind switch
                 {
-                    "POSITIVO" => Kind.Positive,
-                    "EN BLANCO" => Kind.Blank,
-                    "NULO" => Kind.Null,
-                    "IMPUGNADO" => Kind.Contested,
-                    "RECURRIDO" => Kind.Appealed,
-                    "COMANDO" => Kind.Command,
+                    "POSITIVO" => BallotKind.Positive,
+                    "EN BLANCO" => BallotKind.Blank,
+                    "NULO" => BallotKind.Null,
+                    "IMPUGNADO" => BallotKind.Contested,
+                    "RECURRIDO" => BallotKind.Appealed,
+                    "COMANDO" => BallotKind.Command,
                     _ => throw new ArgumentException($"Unexpected ballot kind {value.Kind}"),
                 };
 
                 var election = value.Election switch
                 {
-                    "PASO" => Election.Primary,
-                    "GENERAL" => Election.General,
+                    "PASO" => ElectionKind.Primary,
+                    "GENERAL" => ElectionKind.General,
                     _ => throw new ArgumentException($"Unexpected election value {value.Election}"),
                 };
 
@@ -222,7 +268,7 @@ internal class LoadCommand : AsyncCommand<LoadCommand.Settings>
                         "INSERT INTO Ballot (Year, Election, Circuit, Booth, Electors, Position, Party, Kind, Count) VALUES (@Year, @election, @circuit, @Booth, @Electors, @PositionId, @party, @kind, @Count)",
                         new { value.Year, election, circuit, value.Booth, value.Electors, value.PositionId, party, kind, value.Count });
 
-                    ballot = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
+                    //ballot = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
                 }
             }
         });
