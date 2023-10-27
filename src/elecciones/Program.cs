@@ -49,7 +49,7 @@ app.Configure(config =>
 {
     config.SetApplicationName(ThisAssembly.Project.ToolCommandName);
     config.AddCommand<DownloadCommand>("download");
-    config.AddCommand<LoadCommand>("load");
+    config.AddCommand<DatabaseCommand>("db");
 
 #if DEBUG
     config.PropagateExceptions();
@@ -64,7 +64,7 @@ if (args.Length == 0)
             .Title("Command to run:")
             .AddChoices([
                 "download",
-                "load",
+                "db",
                 "help"
             ]));
 

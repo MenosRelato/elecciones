@@ -16,7 +16,7 @@ using static Spectre.Console.AnsiConsole;
 namespace MenosRelato.Commands;
 
 [Description("Cargar el dataset completo de resultados a una base de datos SQLite.")]
-internal class LoadCommand : AsyncCommand<LoadCommand.Settings>
+internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
 {
     public class Settings : CommandSettings
     {
