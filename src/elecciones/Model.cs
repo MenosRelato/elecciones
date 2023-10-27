@@ -1,23 +1,47 @@
-﻿namespace MenosRelato;
+﻿using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Reflection;
+using System.Text.Json.Serialization;
+
+namespace MenosRelato;
+
+public static class ElectionExtensions
+{
+    public static IEnumerable<Ballot> GetBallots(this Election election) => election.Districts.SelectMany(d => d.GetBallots());
+
+    public static IEnumerable<Ballot> GetBallots(this District district) => district.Provincials.SelectMany(x => x.GetBallots());
+
+    public static IEnumerable<Ballot> GetBallots(this Provincial provincial) => provincial.Sections.SelectMany(s => s.GetBallots());
+
+    public static IEnumerable<Ballot> GetBallots(this Section section) => section.Circuits.SelectMany(c => c.GetBallots());
+
+    public static IEnumerable<Ballot> GetBallots(this Circuit circuit) => circuit.Booths.SelectMany(b => b.Ballots);
+}
 
 public record Election(int Year, ElectionKind Kind)
 {
+    // Serialized just for reference.
+    public Dictionary<byte, string> Ballots { get; } = typeof(BallotKind)
+        .GetMembers(BindingFlags.Public | BindingFlags.Static)
+        .OfType<FieldInfo>()
+        .Where(x => x.Attributes.HasFlag(FieldAttributes.Literal))
+        .Select(x => new { x.GetCustomAttribute<DescriptionAttribute>()!.Description, Value = (byte)x.GetValue(null)! })
+        .ToDictionary(x => x.Value, x => x.Description);
+
     public List<Party> Parties { get; } = new();
     public List<Position> Positions { get; } = new();
     public List<District> Districts { get; } = new();
-    public IEnumerable<Ballot> Ballots => 
-        Districts.SelectMany(d => d.Provincials)
-            .SelectMany(p => p.Sections)
-            .SelectMany(s => s.Circuits)
-            .SelectMany(c => c.Booths)
-            .SelectMany(b => b.Ballots);
 
-    public Party GetOrAddParty(int id, string name)
+    public Party? GetOrAddParty(int? id, string? name)
     {
+        if (id is null || name is null)
+            return null;
+
         if (Parties.FirstOrDefault(p => p.Id == id) is { } party)
             return party;
 
-        party = new Party(id, name);
+        party = new Party(id.Value, name);
         Parties.Add(party);
         return party;
     }
@@ -43,100 +67,219 @@ public record Election(int Year, ElectionKind Kind)
     }
 }
 
-public record Ballot(Booth Booth, Party Party, PartyList? List, BallotKind Kind, int Count);
-
 public enum ElectionKind : byte { Primary, General, Ballotage }
+
 public enum BallotKind : byte
 {
+    [Description("POSITIVO")]
     Positive,
+    [Description("EN BLANCO")]
     Blank,
+    [Description("NULO")]
     Null,
+    [Description("RECURRIDO")]
     /// <summary>
     /// Recurrido
     /// </summary>
     Appealed,
+    [Description("IMPUGNADO")]
     /// <summary>
     /// Impugnado
     /// </summary>
-    Contested, 
+    Contested,
+    [Description("COMANDO")]
     /// <summary>
     /// Commando
     /// </summary>
     Command
 }
-public record District(int Id, string Name)
-{
-    public List<Provincial> Provincials { get; } = new();
 
-    public Provincial GetOrAdd(int id, string name)
+public record District
+{
+    Dictionary<int, Provincial> index = new();
+    ObservableCollection<Provincial> values = new();
+
+    public District(int id, string name)
     {
-        if (Provincials.FirstOrDefault(p => p.Id == id) is { } provincial)
+        (Id, Name) = (id, name);
+        values.CollectionChanged += (s, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (Provincial item in e.NewItems)
+                {
+                    item.District = this;
+                    index.Add(item.Id, item);
+                }
+            }
+        };
+    }
+
+    public int Id { get; init; }
+    public string Name { get; init; }
+    public IList<Provincial> Provincials => values;
+
+    public Provincial GetOrAddProvincial(int id, string name)
+    {
+        if (index.TryGetValue(id, out var provincial))
             return provincial;
 
-        provincial = new Provincial(id, name, this);
-        Provincials.Add(provincial);
+        provincial = new Provincial(id, name);
+        values.Add(provincial);
         return provincial;
     }
 }
 
-public record Provincial(int Id, string Name, District District)
+public class Provincial
 {
-    public List<Section> Sections { get; } = new();
+    Dictionary<int, Section> index = new();
+    ObservableCollection<Section> values = new();
 
-    public Section GetOrAdd(int id, string name)
+    public Provincial(int id, string name)
     {
-        if (Sections.FirstOrDefault(s => s.Id == id) is { } section)
+        (Id, Name) = (id, name);
+        values.CollectionChanged += (s, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (Section item in e.NewItems)
+                {
+                    item.Provincial = this;
+                    index.Add(item.Id, item);
+                }
+            }
+        };
+    }
+
+    public int Id { get; }
+    public string Name { get; }
+    public District? District { get; set; }
+    public IList<Section> Sections => values;
+
+    public Section GetOrAddSection(int id, string name)
+    {
+        if (index.TryGetValue(id, out var section))
             return section;
 
-        section = new Section(id, name, this);
-        Sections.Add(section);
+        section = new Section(id, name);
+        values.Add(section);
         return section;
     }
 }
 
-public record Section(int Id, string Name, Provincial Provincial)
+public class Section
 {
-    public List<Circuit> Circuits { get; } = new();
+    Dictionary<string, Circuit> index = new();
+    ObservableCollection<Circuit> values = new();
 
-    public Circuit GetOrAdd(int id, string name)
+    public Section(int id, string name)
     {
-        if (Circuits.FirstOrDefault(c => c.Id == id) is { } circuit)
+        (Id, Name) = (id, name);
+        values.CollectionChanged += (s, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (Circuit item in e.NewItems)
+                {
+                    item.Section = this;
+                    index.Add(item.Id, item);
+                }
+            }
+        };
+    }
+
+    public int Id { get; }
+    public string Name { get; }
+    public Provincial? Provincial { get; set; }
+    public IList<Circuit> Circuits => values;
+
+    public Circuit GetOrAddCircuit(string id, string? name)
+    {
+        if (index.TryGetValue(id, out var circuit))
             return circuit;
 
-        circuit = new Circuit(id, name, this);
-        Circuits.Add(circuit);
+        circuit = new Circuit(id, name);
+        values.Add(circuit);
         return circuit;
     }
 }
 
-public record Circuit(int Id, string Name, Section Section)
+public class Circuit
 {
-    public List<Booth> Booths { get; } = new();
+    Dictionary<int, Booth> index = new();
+    ObservableCollection<Booth> values = new();
 
-    public Booth GetOrAdd(int id, int electors)
+    public Circuit(string id, string? name)
     {
-        if (Booths.FirstOrDefault(b => b.Id == id) is { } booth)
+        (Id, Name) = (id, name);
+        values.CollectionChanged += (s, e) =>
         {
-            return booth;
-        }
+            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (Booth item in e.NewItems)
+                {
+                    item.Circuit = this;
+                    index.Add(item.Id, item);
+                }
+            }
+        };
+    }
 
-        booth = new Booth(id, electors, this);
-        Booths.Add(booth);
+    public string Id { get; }
+    public string? Name { get; }
+    public Section? Section { get; set; }
+    public IList<Booth> Booths => values;
+
+    public Booth GetOrAddBooth(int id, int electors)
+    {
+        if (index.TryGetValue(id, out var booth))
+            return booth;
+
+        booth = new Booth(id, electors);
+        values.Add(booth);
         return booth;
     }
 }
 
-public record Party(int Id, string Name)
+public record Party
 {
-    public List<PartyList> Lists { get; } = new();
+    Dictionary<int, PartyList> index = new();
+    ObservableCollection<PartyList>? values;
 
-    public PartyList GetOrAdd(int id, string name)
+    public Party(int id, string name)
     {
-        if (Lists.FirstOrDefault(l => l.Id == id) is { } list)
+        (Id, Name) = (id, name);
+    }
+
+    public int Id { get;}
+    public string Name { get; }
+
+    public ICollection<PartyList>? Lists => values;
+
+    public PartyList? GetOrAddList(int? id, string? name)
+    {
+        if (id is null || name is null)
+            return null;
+
+        if (index.TryGetValue(id.Value, out var list))
             return list;
 
-        list = new PartyList(id, name);
-        Lists.Add(list);
+        list = new PartyList(id.Value, name);
+
+        if (values is null)
+        {
+            values = new ObservableCollection<PartyList>();
+            values.CollectionChanged += (s, e) =>
+            {
+                if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+                {
+                    foreach (PartyList item in e.NewItems)
+                        index.Add(item.Id, item);
+                }
+            };
+        }
+
+        values.Add(list);
         return list;
     }
 }
@@ -145,20 +288,39 @@ public record PartyList(int Id, string Name);
 
 public record Position(int Id, string Name);
 
-public record Booth(int Id, int Electors, Circuit Circuit)
+public class Booth
 {
-    public List<Ballot> Ballots { get; } = new();
-
-    public Ballot GetOrAdd(Party party, PartyList? list, BallotKind kind, int count)
+    public Booth(int id, int electors)
     {
-        if (Ballots.FirstOrDefault(b => b.Party == party && b.List == list && b.Kind == kind) is { } ballot)
+        (Id, Electors) = (id, electors);
+    }
+
+    public int Id { get; }
+    public int Electors { get; }
+    public Circuit? Circuit { get; set; }
+    public List<Ballot> Ballots { get; init; } = new();
+
+    public Ballot GetOrAddBallot(BallotKind kind, int count, int position, int? party, int? list)
+    {
+        if (Ballots.FirstOrDefault(b => b.Position == position && b.Party == party && b.List == list && b.Kind == kind) is { } ballot)
         {
             ballot = ballot with { Count = count };
             return ballot;
         }
 
-        ballot = new Ballot(this, party, list, kind, count);
+        if (kind == BallotKind.Positive && party == null)
+            throw new ArgumentException("Voto positivo sin partido.");
+
+        ballot = new Ballot(this, kind, count, position, party, list);
         Ballots.Add(ballot);
         return ballot;
     }
 }
+
+public record Ballot(
+    [property: JsonIgnore, Newtonsoft.Json.JsonIgnore]
+    Booth Booth,
+    BallotKind Kind, 
+    int Count,
+    int Position,
+    int? Party, int? List);

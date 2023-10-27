@@ -63,11 +63,6 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
         [property: JsonPropertyName("votos_tipo")] string Kind,
         [property: JsonPropertyName("votos_cantidad")] int Count);
 
-    // "2023","1","Ciudad Autónoma de Buenos Aires","0","","1","Comuna 01"
-    TextParser<string[]> lineParser =
-        from value in QuotedString.CStyle.ManyDelimitedBy(Character.EqualTo(','))
-        select value;
-
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
         if (!Directory.Exists(csvdir))
@@ -114,11 +109,11 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
             if (first)
             {
                 first = false;
-                header = lineParser.Parse(line).Select(x => x.Trim('"')).ToArray();
+                header = CsvSerializer.LineParser.Parse(line).Select(x => x.Trim('"')).ToArray();
                 continue;
             }
 
-            var values = lineParser.Parse(line);
+            var values = CsvSerializer.LineParser.Parse(line);
             var value = CsvSerializer.Deserialize<ElectoralSection>(header, line);
             Debug.Assert(value != null);
 
@@ -160,7 +155,7 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
                 if (first)
                 {
                     first = false;
-                    header = lineParser.Parse(line).Select(x => x.Trim('"')).ToArray();
+                    header = CsvSerializer.LineParser.Parse(line).Select(x => x.Trim('"')).ToArray();
                     continue;
                 }
 
@@ -177,7 +172,7 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
                     tx = db.BeginTransaction();
                 }
 
-                var values = lineParser.Parse(line);
+                var values = CsvSerializer.LineParser.Parse(line);
                 var value = CsvSerializer.Deserialize<Ballot>(header, line);
                 Debug.Assert(value != null);
 

@@ -5,21 +5,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="publicaciones.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="publicaciones.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.7.2" />
-    <PackageReference Include="xunit" Version="2.5.0" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.0" PrivateAssets="all" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\conicet\conicet.csproj" />
+    <ProjectReference Include="..\elecciones\elecciones.csproj" />
   </ItemGroup>
 
   <ItemGroup>

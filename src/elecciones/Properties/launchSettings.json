@@ -2,7 +2,7 @@
   "profiles": {
     "elecciones": {
       "commandName": "Project",
-      "commandLineArgs": "load"
+      "commandLineArgs": "prepare -c 5868102 -j"
     }
   }
 }

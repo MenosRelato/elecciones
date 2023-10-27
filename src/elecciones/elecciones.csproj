@@ -21,6 +21,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="$(DotNetVersion)" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="$(DotNetVersion)" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="$(DotNetVersion)" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Polly" Version="8.0.0-beta.2" />
     <PackageReference Include="Spectre.Console" Version="0.47.0" />
     <PackageReference Include="Spectre.Console.Analyzer" Version="0.47.0" PrivateAssets="all" />

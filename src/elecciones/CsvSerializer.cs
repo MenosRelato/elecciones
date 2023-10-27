@@ -3,23 +3,24 @@ using Superpower.Parsers;
 using Superpower;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace MenosRelato;
 
 public static class CsvSerializer
 {
-    static readonly JsonSerializerOptions options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+    static readonly JsonSerializerOptions options = new(JsonSerializerDefaults.Web)
     {
-        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
+        NumberHandling = JsonNumberHandling.AllowReadingFromString
     };
 
-    static TextParser<string[]> lineParser =
+    public static TextParser<string[]> LineParser { get; } =
         from value in QuotedString.CStyle.ManyDelimitedBy(Character.EqualTo(','))
         select value;
 
     public static T? Deserialize<T>(string[] header, string line)
     {
-        var values = lineParser.Parse(line);
+        var values = LineParser.Parse(line);
         Debug.Assert(values.Length == header.Length, "Header count doesn't match value count");
 
         var json = new JsonObject(header.Select((x, i) 
