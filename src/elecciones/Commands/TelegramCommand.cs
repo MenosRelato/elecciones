@@ -1,15 +1,10 @@
 ﻿using System.ComponentModel;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using Azure;
 using Microsoft.Playwright;
 using NuGet.Common;
-using Polly;
-using Polly.Retry;
 using Spectre.Console.Cli;
 using static MenosRelato.Results;
 using static Spectre.Console.AnsiConsole;
@@ -85,6 +80,18 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
             });
         });
 
+        await Status().StartAsync("Determinando distritos electorales", async ctx =>
+        {
+            var progress = new Progress<string>(status => ctx.Status = status);
+            var values = Enumerable.Range(0, districts).Skip(settings.Skip).Take(settings.Take);
+
+            await Parallel.ForEachAsync(values, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (i, c) =>
+            {
+                var prepare = new PrepareTelegram(chrome, i, progress);
+                await prepare.ExecuteAsync();
+            });
+        });
+
         return 0;
     }
 
@@ -107,6 +114,21 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
         catch (IOException e)
         {
             Error($"No se pudo guardar el archivo {fileName}: {e.Message}");
+        }
+    }
+
+    class DownloadTelegram(District district, IBrowser browser, IProgress<string> progress)
+    {
+        public async Task ExecuteAsync()
+        {
+            await using var context = await browser.NewContextAsync();
+            var page = await context.NewPageAsync();
+            var tables = district.Sections.SelectMany(s => s.Circuits.SelectMany(c => c.Institutions.SelectMany(i => i.Tables))).ToList();
+
+            foreach (var table in tables)
+            {
+
+            }
         }
     }
 
@@ -168,10 +190,8 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                             }
                             await page.GetByLabel(new Regex("Selecciona un local")).First.ClickAsync();
                         }
-                        await SaveAsync(districts, "resultados.json");
                         await page.GetByLabel(new Regex("Selecciona un circuito")).First.ClickAsync();
                     }
-                    await SaveAsync(districts, "resultados.json");
                     await page.GetByLabel(new Regex("Selecciona una sección presionando enter")).First.ClickAsync();
                 }
 
@@ -179,5 +199,5 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                 break;
             }
         }
-    } 
+    }
 }
