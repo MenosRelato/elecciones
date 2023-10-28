@@ -2,7 +2,7 @@
   "profiles": {
     "elecciones": {
       "commandName": "Project",
-      "commandLineArgs": "telegram --skip 1 -- take 1"
+      "commandLineArgs": "telegram --skip 6 --take 1"
     }
   }
 }
