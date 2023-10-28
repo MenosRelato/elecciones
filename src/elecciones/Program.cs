@@ -8,6 +8,8 @@ using Spectre.Console.Cli;
 using static Spectre.Console.AnsiConsole;
 using MenosRelato;
 using Spectre.Console;
+using Microsoft.Playwright;
+using NuGet.Common;
 
 var config = new ConfigurationManager()
     .AddUserSecrets(ThisAssembly.Project.UserSecretsId)
@@ -16,6 +18,21 @@ var config = new ConfigurationManager()
 
 var services = new ServiceCollection()
     .AddSingleton<IConfiguration>(config)
+    .AddAsyncLazy()
+    .AddSingleton(_ => Playwright.CreateAsync())
+    .AddSingleton(async sp =>
+    {
+        var playwright = await sp.GetRequiredService<AsyncLazy<IPlaywright>>();
+        return await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            ExecutablePath = Chromium.Path,
+#if DEBUG
+            Headless = false,
+#else
+            Headless = true,
+#endif
+        });
+    })
     .AddSingleton(_ => new ResiliencePipelineBuilder()
         .AddRetry(new RetryStrategyOptions
         {
@@ -50,6 +67,7 @@ app.Configure(config =>
     config.AddCommand<DownloadCommand>("download");
     config.AddCommand<PrepareCommand>("prepare");
     config.AddCommand<DatabaseCommand>("db").IsHidden();
+    config.AddCommand<TelegramCommand>("telegram");
 
 #if DEBUG
     config.PropagateExceptions();

@@ -193,6 +193,10 @@ internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Set
                 var value = CsvSerializer.Deserialize<Ballot>(header, line);
                 Debug.Assert(value != null);
 
+                // Don't waste persistence with default value counts
+                if (value.Count == 0)
+                    continue;
+
                 var electionKind = value.Election switch
                 {
                     "PASO" => ElectionKind.Primary,

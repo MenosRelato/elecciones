@@ -34,6 +34,9 @@
     <PackageReference Include="MessagePackAnalyzer" Version="2.5.124" PrivateAssets="all" />
     <PackageReference Include="Tomlyn" Version="0.16.2" />
     <PackageReference Include="SharpYaml" Version="2.1.0" />
+    <PackageReference Include="chromium" Version="2023.10.11" />
+    <PackageReference Include="chromium.win-x64" Version="2023.10.11" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.38.0" />
   </ItemGroup>
 
   <ItemGroup>

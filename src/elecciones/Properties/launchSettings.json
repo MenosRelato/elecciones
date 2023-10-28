@@ -2,7 +2,7 @@
   "profiles": {
     "elecciones": {
       "commandName": "Project",
-      "commandLineArgs": "prepare -c 5868102 -j"
+      "commandLineArgs": "telegram --skip 1 -- take 1"
     }
   }
 }
