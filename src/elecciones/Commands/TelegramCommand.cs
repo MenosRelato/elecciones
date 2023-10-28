@@ -21,17 +21,17 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
 {
     public class Settings : CommandSettings
     {
-        [CommandOption("-s|--skip", IsHidden = true)]
-        [Description("# de items a saltear")]
+        [CommandOption("-s|--skip")]
+        [Description("# de distritos a saltear")]
         public int Skip { get; init; } = 0;
 
-        [CommandOption("-t|--take", IsHidden = true)]
-        [Description("# de items a procesar")]
+        [CommandOption("-t|--take")]
+        [Description("# de distritos a procesar")]
         public int Take { get; init; } = int.MaxValue;
 
-        [CommandOption("-p|--paralell", IsHidden = true)]
-        [Description("Procesar items en paralelo")]
-        public bool Paralellize { get; init; } = false;
+        [CommandOption("-p|--paralell")]
+        [Description("# de items a procesar en paralelo")]
+        public int Paralellize { get; init; } = 4;
     }
 
     record District(string? Name)
@@ -73,17 +73,12 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
             }
         });
 
-        var paralell = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = settings.Paralellize ? Environment.ProcessorCount : 1,
-        };
-
         await Status().StartAsync("Determinando distritos electorales", async ctx =>
         {
             var progress = new Progress<string>(status => ctx.Status = status);
             var values = Enumerable.Range(0, districts).Skip(settings.Skip).Take(settings.Take);
 
-            await Parallel.ForEachAsync(values, paralell, async (i, c) =>
+            await Parallel.ForEachAsync(values, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (i, c) =>
             {
                 var prepare = new PrepareTelegram(chrome, i, progress);
                 await prepare.ExecuteAsync();
