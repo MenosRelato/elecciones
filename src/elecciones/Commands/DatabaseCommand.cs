@@ -52,7 +52,7 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
         [property: JsonPropertyName("seccion_nombre")] string SectionName,
         [property: JsonPropertyName("circuito_id")] string CircuitId,
         [property: JsonPropertyName("circuito_nombre")] string? CircuitName,
-        [property: JsonPropertyName("mesa_id")] int Booth,
+        [property: JsonPropertyName("mesa_id")] int Station,
         [property: JsonPropertyName("mesa_electores")] int Electors,
         [property: JsonPropertyName("cargo_id")] int PositionId,
         [property: JsonPropertyName("cargo_nombre")] string PositionName,
@@ -256,12 +256,12 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
                 };
 
                 if (await db.QueryFirstOrDefaultAsync<int?>(
-                        "SELECT Id FROM Ballot WHERE Year = @Year AND Election = @election AND Circuit = @circuit AND Booth = @Booth AND Position = @PositionId AND Party = @party AND Kind = @kind",
-                        new { value.Year, election, circuit, value.Booth, value.PositionId, party, kind }) is not { } ballot)
+                        "SELECT Id FROM Ballot WHERE Year = @Year AND Election = @election AND Circuit = @circuit AND Station = @Station AND Position = @PositionId AND Party = @party AND Kind = @kind",
+                        new { value.Year, election, circuit, value.Station, value.PositionId, party, kind }) is not { } ballot)
                 {
                     await db.ExecuteAsync(
-                        "INSERT INTO Ballot (Year, Election, Circuit, Booth, Electors, Position, Party, Kind, Count) VALUES (@Year, @election, @circuit, @Booth, @Electors, @PositionId, @party, @kind, @Count)",
-                        new { value.Year, election, circuit, value.Booth, value.Electors, value.PositionId, party, kind, value.Count });
+                        "INSERT INTO Ballot (Year, Election, Circuit, Station, Electors, Position, Party, Kind, Count) VALUES (@Year, @election, @circuit, @Station, @Electors, @PositionId, @party, @kind, @Count)",
+                        new { value.Year, election, circuit, value.Station, value.Electors, value.PositionId, party, kind, value.Count });
 
                     //ballot = await db.ExecuteScalarAsync<int>("select last_insert_rowid()");
                 }

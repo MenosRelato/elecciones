@@ -16,7 +16,7 @@ public static class ElectionExtensions
 
     public static IEnumerable<Ballot> GetBallots(this Section section) => section.Circuits.SelectMany(c => c.GetBallots());
 
-    public static IEnumerable<Ballot> GetBallots(this Circuit circuit) => circuit.Booths.SelectMany(b => b.Ballots);
+    public static IEnumerable<Ballot> GetBallots(this Circuit circuit) => circuit.Stations.SelectMany(b => b.Ballots);
 }
 
 public record Election(int Year, ElectionKind Kind)
@@ -206,8 +206,8 @@ public class Section
 
 public class Circuit
 {
-    Dictionary<int, Booth> index = new();
-    ObservableCollection<Booth> values = new();
+    Dictionary<int, Station> index = new();
+    ObservableCollection<Station> values = new();
 
     public Circuit(string id, string? name)
     {
@@ -216,7 +216,7 @@ public class Circuit
         {
             if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
             {
-                foreach (Booth item in e.NewItems)
+                foreach (Station item in e.NewItems)
                 {
                     item.Circuit = this;
                     index.Add(item.Id, item);
@@ -228,16 +228,16 @@ public class Circuit
     public string Id { get; }
     public string? Name { get; }
     public Section? Section { get; set; }
-    public IList<Booth> Booths => values;
+    public IList<Station> Stations => values;
 
-    public Booth GetOrAddBooth(int id, int electors)
+    public Station GetOrAddStation(int id, int electors)
     {
-        if (index.TryGetValue(id, out var booth))
-            return booth;
+        if (index.TryGetValue(id, out var station))
+            return station;
 
-        booth = new Booth(id, electors);
-        values.Add(booth);
-        return booth;
+        station = new Station(id, electors);
+        values.Add(station);
+        return station;
     }
 }
 
@@ -288,9 +288,9 @@ public record PartyList(int Id, string Name);
 
 public record Position(int Id, string Name);
 
-public class Booth
+public class Station
 {
-    public Booth(int id, int electors)
+    public Station(int id, int electors)
     {
         (Id, Electors) = (id, electors);
     }
@@ -319,7 +319,7 @@ public class Booth
 
 public record Ballot(
     [property: JsonIgnore, Newtonsoft.Json.JsonIgnore]
-    Booth Booth,
+    Station Station,
     BallotKind Kind, 
     int Count,
     int Position,

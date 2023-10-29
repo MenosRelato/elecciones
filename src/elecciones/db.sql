@@ -37,7 +37,7 @@ CREATE TABLE Ballot (
     Election   INTEGER NOT NULL,
     Circuit    INTEGER REFERENCES Circuit (Id) ON DELETE CASCADE
                        NOT NULL,
-    Booth      INTEGER NOT NULL,
+    Station    INTEGER NOT NULL,
     Electors   INTEGER NOT NULL,
     Position   INTEGER,
     Party      INTEGER REFERENCES Party (Id) ON DELETE CASCADE
@@ -62,7 +62,7 @@ CREATE VIEW Resultados AS
         Section.SectionName AS seccion_nombre,
         Circuit.CircuitId AS circuito_id,
         Circuit.CircuitName AS circuito_nombre,
-        Ballot.Booth AS mesa_id,
+        Ballot.Station AS mesa_id,
         Ballot.Electors AS mesa_electores,
         Position.Id AS cargo_id,
         Position.Name AS cargo_nombre,

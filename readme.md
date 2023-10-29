@@ -127,7 +127,7 @@ con otras herramientas.
                 {
                   "Id": "00018",
                   "Name": "00018",
-                  "Booths": [
+                  "Stations": [
                     {
                       "Id": 475,
                       "Electors": 349,

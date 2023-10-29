@@ -49,9 +49,9 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
     }
     record Institution(string? Name)
     {
-        public List<Table> Tables { get; } = new();
+        public List<Station> Stations { get; } = new();
     }
-    record Table(string Code, string Url);
+    record Station(string Code, string Url);
 
     static readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions
     {
@@ -109,7 +109,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                 using var json = File.OpenRead(x);
                 var district = Newtonsoft.Json.JsonConvert.DeserializeObject<District>(File.ReadAllText(x));
                 Debug.Assert(district != null);
-                var prepare = new DownloadTelegram(district, chrome, progress);
+                var prepare = new DownloadTelegram(district, progress);
                 await prepare.ExecuteAsync();
             });
         });
@@ -132,57 +132,48 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
         }
     }
 
-    class DownloadTelegram(District district, IBrowser browser, IProgress<string> progress)
+    class DownloadTelegram(District district, IProgress<string> progress)
     {
         public async Task ExecuteAsync()
         {
-            //await using var context = await browser.NewContextAsync();
             using var http = Constants.CreateHttp();
             http.BaseAddress = new Uri("https://resultados.gob.ar");
-            //var page = await context.NewPageAsync();
 
             foreach (var circuit in district.Sections.SelectMany(s => s.Circuits))
             {
-                foreach (var table in circuit.Institutions.SelectMany(i => i.Tables))
+                foreach (var station in circuit.Institutions.SelectMany(i => i.Stations))
                 {
-                    var districtId = int.Parse(table.Code[..2]);
-                    var sectionId = int.Parse(table.Code[2..5]);
+                    var districtId = int.Parse(station.Code[..2]);
+                    var sectionId = int.Parse(station.Code[2..5]);
                     var circuitId = circuit.Name;
                     Debug.Assert(circuitId != null);
 
                     var path = Path.Combine(Constants.DefaultCacheDir, "telegram", districtId.ToString(), sectionId.ToString(), circuitId);
                     Directory.CreateDirectory(path);
 
-                    //var doc = HtmlDocument.Load("https://resultados.gob.ar" + table.Url);
-                    //var img = doc.CssSelectElement(".container-imgs img")?.Attribute("src")?.Value;
-                    //Debug.Assert(img != null);
-                    //var data = Convert.FromBase64String(img[base64Length..]);
-
-                    // await File.WriteAllBytesAsync(Path.Combine(path, table.Code + ".png"), data);
-
-                    var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + table.Code + "/1");
+                    var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + station.Code + "/1");
                     Debug.Assert(!string.IsNullOrEmpty(scope));
                     var sdata = Newtonsoft.Json.Linq.JObject.Parse(scope);
-                    await File.WriteAllTextAsync(Path.Combine(path, table.Code + ".scope.json"), sdata.ToString());
+                    await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json"), sdata.ToString());
 
                     var location = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Select(x => x.ToString()));
 
-                    var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + table.Code);
+                    var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + station.Code);
                     if (string.IsNullOrEmpty(tiff))
                     {
-                        progress.Report($"[red]x[/] No hay telegrama {location} - {table.Code}");
+                        progress.Report($"[red]x[/] No hay telegrama {location} - {station.Code}");
                         continue;
                     }
 
                     Debug.Assert(!string.IsNullOrEmpty(tiff));
 
                     dynamic tdata = Newtonsoft.Json.Linq.JObject.Parse(tiff);
-                    await File.WriteAllTextAsync(Path.Combine(path, table.Code + ".json"), tdata.ToString());
+                    await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), tdata.ToString());
 
                     var img = Convert.FromBase64String((string)tdata.encodingBinary);
-                    await File.WriteAllBytesAsync(Path.Combine(path, table.Code + ".png"), img);
+                    await File.WriteAllBytesAsync(Path.Combine(path, station.Code + ".png"), img);
 
-                    progress.Report($"Descargado telegrama {location} - {table.Code}");
+                    progress.Report($"Descargado telegrama {location} - {station.Code}");
                 }
             }
         }
@@ -282,7 +273,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                                 var url = await retry.ExecuteAsync(async _ => await page.GetByText("Aplicar filtros").GetAttributeAsync("href"));
 
                                 Debug.Assert(name != null && url != null);
-                                districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Tables.Add(new(name, url));
+                                districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Stations.Add(new(name, url));
 
                                 await retry.ExecuteAsync(async _ => await tableButton.ClickAsync());
                             }
@@ -296,7 +287,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                     await retry.ExecuteAsync(async _ => await sectionButton.ClickAsync());
                 }
 
-                await SaveAsync(districts[^1], Path.Combine("web", districts[^1].Sections[0].Circuits[0].Institutions[0].Tables[0].Code[..2] + ".json"));
+                await SaveAsync(districts[^1], Path.Combine("web", districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2] + ".json"));
                 break;
             }
         }

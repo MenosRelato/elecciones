@@ -71,7 +71,7 @@ internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Set
         [property: JsonPropertyName("seccion_nombre")] string SectionName,
         [property: JsonPropertyName("circuito_id")] string CircuitId,
         [property: JsonPropertyName("circuito_nombre")] string? CircuitName,
-        [property: JsonPropertyName("mesa_id")] int Booth,
+        [property: JsonPropertyName("mesa_id")] int Station,
         [property: JsonPropertyName("mesa_electores")] int Electors,
         [property: JsonPropertyName("cargo_id")] int PositionId,
         [property: JsonPropertyName("cargo_nombre")] string PositionName,
@@ -176,7 +176,7 @@ internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Set
                                 s.Circuits.Where(x => !x.GetBallots().Any()).ToList().ForEach(x => s.Circuits.Remove(x));
                                 foreach (var c in s.Circuits)
                                 {
-                                    c.Booths.Where(x => !x.Ballots.Any()).ToList().ForEach(x => c.Booths.Remove(x));
+                                    c.Stations.Where(x => !x.Ballots.Any()).ToList().ForEach(x => c.Stations.Remove(x));
                                 }
                             }
                         }
@@ -222,7 +222,7 @@ internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Set
                     .GetOrAddProvincial(value.ProvincialId, value.ProvincialName)
                     .GetOrAddSection(value.SectionId, value.SectionName)
                     .GetOrAddCircuit(value.CircuitId, value.CircuitName)
-                    .GetOrAddBooth(value.Booth, value.Electors)
+                    .GetOrAddStation(value.Station, value.Electors)
                     .GetOrAddBallot(
                         ballotKind, value.Count,
                         election.GetOrAddPosition(value.PositionId, value.PositionName).Id,

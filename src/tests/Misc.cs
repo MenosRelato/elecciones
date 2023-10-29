@@ -1,7 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using MessagePack;
-using MessagePack.Resolvers;
 using Newtonsoft.Json;
 
 namespace MenosRelato;
@@ -18,7 +16,7 @@ public class Misc(ITestOutputHelper output)
             .GetOrAddProvincial(1, "San Telmo")
             .GetOrAddSection(1, "Plaza")
             .GetOrAddCircuit("1", "Escuela N1")
-            .GetOrAddBooth(1015, 350);
+            .GetOrAddStation(1015, 350);
 
         var ballot = booth.GetOrAddBallot(BallotKind.Positive, 100, position.Id, party?.Id, null);
         
