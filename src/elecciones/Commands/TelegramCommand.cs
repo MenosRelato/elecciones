@@ -5,6 +5,8 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using NuGet.Common;
+using Polly.Retry;
+using Polly;
 using Spectre.Console.Cli;
 using static MenosRelato.Results;
 using static Spectre.Console.AnsiConsole;
@@ -27,6 +29,10 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
         [CommandOption("-p|--paralell")]
         [Description("# de items a procesar en paralelo")]
         public int Paralellize { get; init; } = 4;
+
+        [CommandOption("-d|--download", IsHidden = true)]
+        [Description("Descarga telegramas directa, sin pre-procesamiento de distritos")]
+        public bool DownloadOnly { get; init; } = false;
     }
 
     record District(string? Name)
@@ -47,47 +53,63 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
     }
     record Table(string Code, string Url);
 
+    static readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
+        ReferenceHandler = ReferenceHandler.IgnoreCycles,
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
         var chrome = await browser;
-        var districts = 0;
-        await Status().StartAsync("Determinando distritos electorales", async ctx =>
-        {
-            await using var context = await chrome.NewContextAsync();
-            var page = await context.NewPageAsync();
-            await page.GotoAsync("https://resultados.gob.ar/", new PageGotoOptions
-            {
-                Timeout = 0,
-                WaitUntil = WaitUntilState.NetworkIdle,
-            });
-            await page.GetByLabel("Filtro por ámbito").ClickAsync();
-            await page.GetByLabel(new Regex(@"\s*Selecciona un distrito presionando enter")).ClickAsync();
-            foreach (var district in await page.GetByRole(AriaRole.Option).AllAsync())
-            {
-                districts++;
-            }
-        });
 
-        await Status().StartAsync("Determinando distritos electorales", async ctx =>
+        if (!settings.DownloadOnly)
+        {
+            var districts = 0;
+            await Status().StartAsync("Determinando distritos electorales", async ctx =>
+            {
+                await using var context = await chrome.NewContextAsync();
+                var page = await context.NewPageAsync();
+                await page.GotoAsync("https://resultados.gob.ar/", new PageGotoOptions
+                {
+                    Timeout = 0,
+                    WaitUntil = WaitUntilState.NetworkIdle,
+                });
+                await page.GetByLabel("Filtro por ámbito").ClickAsync();
+                await page.GetByLabel(new Regex(@"\s*Selecciona un distrito presionando enter")).ClickAsync();
+                foreach (var district in await page.GetByRole(AriaRole.Option).AllAsync())
+                {
+                    districts++;
+                }
+            });
+
+            await Status().StartAsync("Determinando distritos electorales", async ctx =>
+            {
+                var progress = new Progress<string>(status => ctx.Status = status);
+                var values = Enumerable.Range(0, districts).Skip(settings.Skip).Take(settings.Take);
+
+                await Parallel.ForEachAsync(values, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (i, c) =>
+                {
+                    var prepare = new PrepareTelegram(chrome, i, progress);
+                    await prepare.ExecuteAsync();
+                });
+            });
+        }
+
+        await Status().StartAsync("Descargando telegramas", async ctx =>
         {
             var progress = new Progress<string>(status => ctx.Status = status);
-            var values = Enumerable.Range(0, districts).Skip(settings.Skip).Take(settings.Take);
+            var path = Path.Combine(Constants.DefaultCacheDir, "web");
+            var districts = Directory.EnumerateFiles(path, "*.json");
 
-            await Parallel.ForEachAsync(values, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (i, c) =>
+            await Parallel.ForEachAsync(districts, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (x, c) =>
             {
-                var prepare = new PrepareTelegram(chrome, i, progress);
-                await prepare.ExecuteAsync();
-            });
-        });
-
-        await Status().StartAsync("Determinando distritos electorales", async ctx =>
-        {
-            var progress = new Progress<string>(status => ctx.Status = status);
-            var values = Enumerable.Range(0, districts).Skip(settings.Skip).Take(settings.Take);
-
-            await Parallel.ForEachAsync(values, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (i, c) =>
-            {
-                var prepare = new PrepareTelegram(chrome, i, progress);
+                using var json = File.OpenRead(x);
+                var district = Newtonsoft.Json.JsonConvert.DeserializeObject<District>(File.ReadAllText(x));
+                Debug.Assert(district != null);
+                var prepare = new DownloadTelegram(district, chrome, progress);
                 await prepare.ExecuteAsync();
             });
         });
@@ -99,17 +121,10 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
     {
         try
         {
-            var options = new JsonSerializerOptions
-            {
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
-                ReferenceHandler = ReferenceHandler.IgnoreCycles,
-                WriteIndented = true,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            };
             var path = Path.Combine(Constants.DefaultCacheDir, fileName);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             using var json = File.Create(Path.Combine(Constants.DefaultCacheDir, fileName));
-            await JsonSerializer.SerializeAsync(json, value, options);
+            await JsonSerializer.SerializeAsync(json, value, jsonOptions);
         }
         catch (IOException e)
         {
@@ -121,13 +136,54 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
     {
         public async Task ExecuteAsync()
         {
-            await using var context = await browser.NewContextAsync();
-            var page = await context.NewPageAsync();
-            var tables = district.Sections.SelectMany(s => s.Circuits.SelectMany(c => c.Institutions.SelectMany(i => i.Tables))).ToList();
+            //await using var context = await browser.NewContextAsync();
+            using var http = Constants.CreateHttp();
+            http.BaseAddress = new Uri("https://resultados.gob.ar");
+            //var page = await context.NewPageAsync();
 
-            foreach (var table in tables)
+            foreach (var circuit in district.Sections.SelectMany(s => s.Circuits))
             {
+                foreach (var table in circuit.Institutions.SelectMany(i => i.Tables))
+                {
+                    var districtId = int.Parse(table.Code[..2]);
+                    var sectionId = int.Parse(table.Code[2..5]);
+                    var circuitId = circuit.Name;
+                    Debug.Assert(circuitId != null);
 
+                    var path = Path.Combine(Constants.DefaultCacheDir, "telegram", districtId.ToString(), sectionId.ToString(), circuitId);
+                    Directory.CreateDirectory(path);
+
+                    //var doc = HtmlDocument.Load("https://resultados.gob.ar" + table.Url);
+                    //var img = doc.CssSelectElement(".container-imgs img")?.Attribute("src")?.Value;
+                    //Debug.Assert(img != null);
+                    //var data = Convert.FromBase64String(img[base64Length..]);
+
+                    // await File.WriteAllBytesAsync(Path.Combine(path, table.Code + ".png"), data);
+
+                    var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + table.Code + "/1");
+                    Debug.Assert(!string.IsNullOrEmpty(scope));
+                    var sdata = Newtonsoft.Json.Linq.JObject.Parse(scope);
+                    await File.WriteAllTextAsync(Path.Combine(path, table.Code + ".scope.json"), sdata.ToString());
+
+                    var location = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Select(x => x.ToString()));
+
+                    var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + table.Code);
+                    if (string.IsNullOrEmpty(tiff))
+                    {
+                        progress.Report($"[red]x[/] No hay telegrama {location} - {table.Code}");
+                        continue;
+                    }
+
+                    Debug.Assert(!string.IsNullOrEmpty(tiff));
+
+                    dynamic tdata = Newtonsoft.Json.Linq.JObject.Parse(tiff);
+                    await File.WriteAllTextAsync(Path.Combine(path, table.Code + ".json"), tdata.ToString());
+
+                    var img = Convert.FromBase64String((string)tdata.encodingBinary);
+                    await File.WriteAllBytesAsync(Path.Combine(path, table.Code + ".png"), img);
+
+                    progress.Report($"Descargado telegrama {location} - {table.Code}");
+                }
             }
         }
     }
@@ -138,18 +194,51 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
         {
             await using var context = await browser.NewContextAsync();
             var page = await context.NewPageAsync();
+            page.SetDefaultTimeout(5000);
+            var actions = new Stack<Func<Task>>();
 
-            await page.GotoAsync("https://resultados.gob.ar/", new PageGotoOptions
+            actions.Push(() => page.GotoAsync("https://resultados.gob.ar/", new PageGotoOptions
             {
                 Timeout = 0,
                 WaitUntil = WaitUntilState.NetworkIdle,
-            });
+            }));
 
-            await page.GetByLabel("Filtro por ámbito").ClickAsync();
-            await page.GetByLabel(new Regex(@"\s*Selecciona un distrito presionando enter")).ClickAsync();
+            var districtButton = page.GetByLabel(new Regex(@"\s*Selecciona un distrito presionando enter"));
+            var sectionButton = page.GetByLabel(new Regex("Selecciona una sección presionando enter")).First;
+            var circuitButton = page.GetByLabel(new Regex("Selecciona un circuito")).First;
+            var localButton = page.GetByLabel(new Regex("Selecciona un local")).First;
+            var tableButton = page.GetByLabel(new Regex("de mesa presionando enter")).First;
+
+            actions.Push(() => page.GetByLabel("Filtro por ámbito").ClickAsync());
+            actions.Push(() => districtButton.ClickAsync());
 
             var count = 0;
             var districts = new List<District>();
+
+            var retry = new ResiliencePipelineBuilder()
+                .AddRetry(new RetryStrategyOptions
+                {
+                    MaxRetryAttempts = int.MaxValue,
+                    BackoffType = DelayBackoffType.Linear,
+                    Delay = TimeSpan.FromSeconds(2),
+                    OnRetry = async x =>
+                    {
+                        MarkupLine($"[red]x[/] Reintento #{x.AttemptNumber + 1}");
+                        foreach (var action in actions.Reverse())
+                            await action();
+                    },
+                })
+                .Build();
+
+            foreach (var action in actions.Reverse())
+                await action();
+
+            async Task<IDisposable> PushExecuteAsync(Func<Task> action)
+            {
+                await retry!.ExecuteAsync(async _ => await action());
+                actions!.Push(action);
+                return new Poper(actions);
+            }
 
             foreach (var district in await page.GetByRole(AriaRole.Option).AllAsync())
             {
@@ -159,45 +248,62 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                     continue;
                 }
 
-                districts.Add(new(await district.TextContentAsync()));
-                await district.ClickAsync();
-                await page.GetByLabel(new Regex("Selecciona una sección presionando enter")).First.ClickAsync();
+                using var dc = await PushExecuteAsync(() => district.ClickAsync());
+                districts.Add(new(await retry.ExecuteAsync(async _ => await districtButton.TextContentAsync())));
+
+                using var ds = await PushExecuteAsync(() => sectionButton.ClickAsync());
 
                 foreach (var section in await page.GetByRole(AriaRole.Option).AllAsync())
                 {
-                    districts[^1].Sections.Add(new(await section.TextContentAsync()));
-                    await section.ClickAsync();
-                    await page.GetByLabel(new Regex("Selecciona un circuito")).First.ClickAsync();
+                    using var sc = await PushExecuteAsync(() => section.ClickAsync());
+                    districts[^1].Sections.Add(new(await retry.ExecuteAsync(async _ => await sectionButton.TextContentAsync())));
+
+                    using var ss = await PushExecuteAsync(() => circuitButton.ClickAsync());
+
                     foreach (var circuit in await page.GetByRole(AriaRole.Option).AllAsync())
                     {
-                        districts[^1].Sections[^1].Circuits.Add(new(await circuit.TextContentAsync()));
-                        await circuit.ClickAsync();
-                        await page.GetByLabel(new Regex("Selecciona un local")).First.ClickAsync();
+                        using var cc = await PushExecuteAsync(() => circuit.ClickAsync());
+                        districts[^1].Sections[^1].Circuits.Add(new(await retry.ExecuteAsync(async _ => await circuitButton.TextContentAsync())));
+
+                        using var cs = await PushExecuteAsync(() => localButton.ClickAsync());
+
                         foreach (var local in await page.GetByRole(AriaRole.Option).AllAsync())
                         {
-                            districts[^1].Sections[^1].Circuits[^1].Institutions.Add(new(await local.TextContentAsync()));
+                            using var lc = await PushExecuteAsync(() => local.ClickAsync());
+                            districts[^1].Sections[^1].Circuits[^1].Institutions.Add(new(await retry.ExecuteAsync(async _ => await localButton.TextContentAsync())));
                             progress.Report($"{districts[^1].Name} - {districts[^1].Sections[^1].Name} - {districts[^1].Sections[^1].Circuits[^1].Name} - {districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Name}");
-                            await local.ClickAsync();
-                            await page.GetByLabel(new Regex("de mesa presionando enter")).First.ClickAsync();
+
+                            using var ls = await PushExecuteAsync(() => tableButton.ClickAsync());
+                            
                             foreach (var table in await page.GetByRole(AriaRole.Option).AllAsync())
                             {
-                                var name = await table.TextContentAsync();
-                                await table.ClickAsync();
-                                var url = await page.GetByText("Aplicar filtros").GetAttributeAsync("href");
+                                using var tc = await PushExecuteAsync(() => table.ClickAsync());
+                                var name = await retry.ExecuteAsync(async _ => await tableButton.TextContentAsync());
+                                var url = await retry.ExecuteAsync(async _ => await page.GetByText("Aplicar filtros").GetAttributeAsync("href"));
+
                                 Debug.Assert(name != null && url != null);
                                 districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Tables.Add(new(name, url));
-                                await page.GetByLabel(new Regex("de mesa presionando enter")).First.ClickAsync();
+
+                                await retry.ExecuteAsync(async _ => await tableButton.ClickAsync());
                             }
-                            await page.GetByLabel(new Regex("Selecciona un local")).First.ClickAsync();
+
+                            await retry.ExecuteAsync(async _ => await localButton.ClickAsync());
                         }
-                        await page.GetByLabel(new Regex("Selecciona un circuito")).First.ClickAsync();
+
+                        await retry.ExecuteAsync(async _ => await circuitButton.ClickAsync());
                     }
-                    await page.GetByLabel(new Regex("Selecciona una sección presionando enter")).First.ClickAsync();
+
+                    await retry.ExecuteAsync(async _ => await sectionButton.ClickAsync());
                 }
 
                 await SaveAsync(districts[^1], Path.Combine("web", districts[^1].Sections[0].Circuits[0].Institutions[0].Tables[0].Code[..2] + ".json"));
                 break;
             }
+        }
+
+        class Poper(Stack<Func<Task>> stack) : IDisposable
+        {
+            public void Dispose() => stack.Pop();
         }
     }
 }
