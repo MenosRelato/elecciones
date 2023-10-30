@@ -62,12 +62,10 @@ public partial class UploadCommand(IConfiguration configuration) : AsyncCommand<
                 SetAttributesCallbackAsync = (sourcePath, destinationPath) =>
                 {
                     if (destinationPath is not ICloudBlob blob ||
-                        sourcePath is not string sourceFile ||
-                        !sourceFile.EndsWith(".gz"))
+                        sourcePath is not string sourceFile)
                         return Task.CompletedTask;
-
-                    blob.Properties.ContentType = "application/x-gzip";
-                    blob.Properties.ContentEncoding = "gzip";
+                    
+                    blob.Properties.ContentType = MimeTypes.GetMimeType(sourceFile);
                     return Task.CompletedTask;
                 },
                 ProgressHandler = new Progress<TransferStatus>(

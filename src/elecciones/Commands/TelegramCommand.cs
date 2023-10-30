@@ -107,7 +107,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
         await Status().StartAsync("Descargando telegramas", async ctx =>
         {
             var progress = new Progress<string>(status => ctx.Status = status);
-            var path = Path.Combine(Constants.DefaultCacheDir, "web");
+            var path = Path.Combine(Constants.DefaultCacheDir, "telegrama");
             var districts = Directory.EnumerateFiles(path, "*.json");
 
             await Parallel.ForEachAsync(districts, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (x, c) =>
@@ -308,8 +308,10 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                     await retry.ExecuteAsync(async _ => await sectionButton.ClickAsync());
                 }
 
+                var districtId = int.Parse(districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2]);
+
                 await SaveAsync(districts[^1], 
-                    Path.Combine("web", districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2] + ".json"), 
+                    Path.Combine("telegrama", $"{districtId}.json"), 
                     zip);
 
                 break;

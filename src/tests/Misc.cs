@@ -6,6 +6,14 @@ namespace MenosRelato;
 
 public class Misc(ITestOutputHelper output)
 {
+    [LocalFact]
+    public async Task OpenJson()
+    {
+        var json = await GzipFile.ReadAllTextAsync(@"C:\Users\dev\AppData\Roaming\MenosRelato\elecciones\telegrama\24.json.gz");
+
+        output.WriteLine(json);
+    }
+
     [Fact]
     public void SerializeModel()
     {

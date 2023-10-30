@@ -1,4 +1,5 @@
-﻿using System.IO.Compression;
+﻿using System.Diagnostics;
+using System.IO.Compression;
 
 namespace MenosRelato;
 
@@ -6,8 +7,9 @@ public static class GzipFile
 {
     public static async Task<string> ReadAllTextAsync(string path)
     {
-        using var stream = File.OpenRead(path);
-        using var zip = new GZipStream(stream, CompressionLevel.Optimal);
+        Debug.Assert(File.Exists(path));
+        using var stream = File.Open(path, FileMode.Open);
+        using var zip = new GZipStream(stream, CompressionMode.Decompress);
         using var reader = new StreamReader(zip);
         return await reader.ReadToEndAsync();
     }
