@@ -26,7 +26,8 @@ var services = new ServiceCollection()
         return await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             ExecutablePath = Chromium.Path,
-            Headless = args.Contains("--headless")
+            // Headless doesn't work for some reason.
+            Headless = false,
         });
     })
     .AddSingleton(_ => new ResiliencePipelineBuilder()
