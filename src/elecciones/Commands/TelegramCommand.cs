@@ -223,7 +223,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             var sectionButton = page.GetByLabel(new Regex("Selecciona una sección presionando enter")).First;
             var circuitButton = page.GetByLabel(new Regex("Selecciona un circuito")).First;
             var localButton = page.GetByLabel(new Regex("Selecciona un local")).First;
-            var tableButton = page.GetByLabel(new Regex("de mesa presionando enter")).First;
+            var stationButton = page.GetByLabel(new Regex("de mesa presionando enter")).First;
 
             actions.Push(() => page.GetByLabel("Filtro por ámbito").ClickAsync());
             actions.Push(() => districtButton.ClickAsync());
@@ -293,18 +293,25 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                             districts[^1].Sections[^1].Circuits[^1].Institutions.Add(new(await retry.ExecuteAsync(async _ => await localButton.TextContentAsync())));
                             progress.Report($"{districts[^1].Name} - {districts[^1].Sections[^1].Name} - {districts[^1].Sections[^1].Circuits[^1].Name} - {districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Name}");
 
-                            using var ls = await PushExecuteAsync(() => tableButton.ClickAsync());
+                            using var ls = await PushExecuteAsync(() => stationButton.ClickAsync());
                             
-                            foreach (var table in await page.GetByRole(AriaRole.Option).AllAsync())
+                            foreach (var station in await page.GetByRole(AriaRole.Option).AllAsync())
                             {
-                                using var tc = await PushExecuteAsync(() => table.ClickAsync());
-                                var name = await retry.ExecuteAsync(async _ => await tableButton.TextContentAsync());
+                                using var tc = await PushExecuteAsync(() => station.ClickAsync());
+                                var code = await retry.ExecuteAsync(async _ => await stationButton.TextContentAsync());
                                 var url = await retry.ExecuteAsync(async _ => await page.GetByText("Aplicar filtros").GetAttributeAsync("href"));
 
-                                Debug.Assert(name != null && url != null);
-                                districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Stations.Add(new(name, url));
+                                Debug.Assert(code != null && url != null);
+                                districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Stations.Add(new(code, url));
 
-                                await retry.ExecuteAsync(async _ => await tableButton.ClickAsync());
+                                await retry.ExecuteAsync(async _ => await stationButton.ClickAsync());
+
+                                var districtFile = Path.Combine(settings.BaseDir, "telegrama", $"{code[..2]}.json{(settings.Zip ? "gz" : "")}");
+                                if (File.Exists(districtFile))
+                                {
+                                    Result(0, $"Distrito {districts[^1].Name} ya esta indexado");
+                                    return;
+                                }
                             }
 
                             await retry.ExecuteAsync(async _ => await localButton.ClickAsync());
