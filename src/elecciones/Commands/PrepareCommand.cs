@@ -15,7 +15,7 @@ using static Spectre.Console.AnsiConsole;
 
 namespace MenosRelato.Commands;
 
-[Description("Preparar el dataset completo de resultados en formato JSON.")]
+[Description("Preparar el dataset completo de resultados en formato JSON")]
 internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Settings>
 {
     public class Settings : CommandSettings

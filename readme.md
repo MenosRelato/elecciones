@@ -31,6 +31,7 @@ OPTIONS:
 COMMANDS:
     download    Descargar el dataset completo de resultados
     prepare     Preparar el dataset completo de resultados en formato JSON
+    telegram    Descarga telegramas de la eleccion con metadata en formato JSON (compactado con GZip)
 ```
 
 La herramienta almacena los datos descargados en `%appdata%\MenosRelato\elecciones`.
