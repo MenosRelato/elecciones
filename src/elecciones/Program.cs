@@ -65,6 +65,7 @@ app.Configure(config =>
     config.AddCommand<DatabaseCommand>("db").IsHidden();
     config.AddCommand<TelegramCommand>("telegram");
     config.AddCommand<GzipCommand>("gzip").IsHidden();
+    config.AddCommand<UploadCommand>("upload");
 
 #if DEBUG
     config.PropagateExceptions();
