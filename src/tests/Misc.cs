@@ -1,11 +1,36 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MenosRelato.Commands;
+using Microsoft.Azure.Storage;
+using Microsoft.Azure.Storage.Blob;
+using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 
 namespace MenosRelato;
 
 public class Misc(ITestOutputHelper output)
 {
+    [Fact]
+    public void ParseAnonymousStorageAccount()
+    {
+        var config = new ConfigurationManager()
+            .AddUserSecrets(ThisAssembly.Project.UserSecretsId)
+            .AddEnvironmentVariables()
+            .Build();
+
+        var settings = new StorageSettings(config);
+
+        Assert.True(settings.Validate().Successful);
+
+        Assert.True(settings.StorageValues.TryGetValue("BlobEndpoint", out var blobUrl));
+
+        var blobUri = new Uri(blobUrl);
+        var container = new CloudBlobContainer(new Uri(blobUri, "elecciones"));
+        var count = container.ListBlobs().Count();
+
+        Assert.NotEqual(0, count);
+    }
+
     [LocalFact]
     public async Task OpenJson()
     {

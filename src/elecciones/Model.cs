@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json.Serialization;
 
@@ -17,6 +18,25 @@ public static class ElectionExtensions
     public static IEnumerable<Ballot> GetBallots(this Section section) => section.Circuits.SelectMany(c => c.GetBallots());
 
     public static IEnumerable<Ballot> GetBallots(this Circuit circuit) => circuit.Stations.SelectMany(b => b.Ballots);
+
+    public static string ToUserString(this ElectionKind kind) => kind switch 
+    { 
+        ElectionKind.Primary => "PASO", 
+        ElectionKind.General => "GENERAL", 
+        ElectionKind.Ballotage => "BALOTAJE", 
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null) 
+    };
+
+    public static string ToUserString(this BallotKind kind) => kind switch
+    {
+        BallotKind.Positive => "POSITIVO",
+        BallotKind.Blank => "EN BLANCO",
+        BallotKind.Null => "NULO",
+        BallotKind.Appealed => "RECURRIDO",
+        BallotKind.Contested => "IMPUGNADO",
+        BallotKind.Command => "COMANDO",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+    };
 }
 
 public record Election(int Year, ElectionKind Kind)
@@ -67,8 +87,47 @@ public record Election(int Year, ElectionKind Kind)
     }
 }
 
-public enum ElectionKind : byte { Primary, General, Ballotage }
+[TypeConverter(typeof(ElectionKindConverter))]
+public enum ElectionKind : byte
+{
+    [Description("PASO")]
+    Primary,
+    [Description("GENERAL")]
+    General,
+    [Description("BALOTAJE")]
+    Ballotage
+}
 
+public class ElectionKindConverter : EnumConverter
+{
+    public ElectionKindConverter() : base(typeof(ElectionKind)) { }
+
+    public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object value)
+    {
+        if (value is string kind)
+        {
+            return kind switch
+            {
+                "PASO" => ElectionKind.Primary,
+                "GENERAL" => ElectionKind.General,
+                "BALOTAJE" => ElectionKind.Ballotage,
+                _ => base.ConvertFrom(context, culture, value)
+            };
+        }
+
+        return base.ConvertFrom(context, culture, value);
+    }
+
+    public override object? ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
+    {
+        if (value is ElectionKind kind && destinationType == typeof(string))
+            return kind.ToUserString();
+
+        return base.ConvertTo(context, culture, value, destinationType);
+    }
+}
+
+[TypeConverter(typeof(BallotKindConverter))]
 public enum BallotKind : byte
 {
     [Description("POSITIVO")]
@@ -92,6 +151,38 @@ public enum BallotKind : byte
     /// Commando
     /// </summary>
     Command
+}
+
+public class BallotKindConverter : EnumConverter
+{
+    public BallotKindConverter() : base(typeof(BallotKind)) { }
+
+    public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object value)
+    {
+        if (value is string kind)
+        {
+            return kind switch
+            {
+                "POSITIVO" => BallotKind.Positive,
+                "EN BLANCO" => BallotKind.Blank,
+                "NULO" => BallotKind.Null,
+                "RECURRIDO" => BallotKind.Appealed,
+                "IMPUGNADO" => BallotKind.Contested,
+                "COMANDO" => BallotKind.Command,
+                _ => base.ConvertFrom(context, culture, value)
+            };
+        }
+
+        return base.ConvertFrom(context, culture, value);
+    }
+
+    public override object? ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
+    {
+        if (value is BallotKind kind && destinationType == typeof(string))
+            return kind.ToUserString();
+
+        return base.ConvertTo(context, culture, value, destinationType);
+    }
 }
 
 public record District
@@ -251,7 +342,7 @@ public record Party
         (Id, Name) = (id, name);
     }
 
-    public int Id { get;}
+    public int Id { get; }
     public string Name { get; }
 
     public ICollection<PartyList>? Lists => values;
@@ -320,7 +411,7 @@ public class Station
 public record Ballot(
     [property: JsonIgnore, Newtonsoft.Json.JsonIgnore]
     Station Station,
-    BallotKind Kind, 
+    BallotKind Kind,
     int Count,
     int Position,
     int? Party, int? List);

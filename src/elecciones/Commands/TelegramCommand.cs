@@ -15,9 +15,9 @@ using System.IO.Compression;
 namespace MenosRelato.Commands;
 
 [Description("Descarga telegramas de la eleccion con metadata en formato JSON (compactado con GZip)")]
-internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<TelegramCommand.Settings>
+internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline resilience) : AsyncCommand<TelegramCommand.Settings>
 {
-    public class Settings : CommandSettings
+    public class Settings : ElectionSettings
     {
         [CommandOption("-s|--skip")]
         [Description("# de distritos a saltear")]
@@ -76,19 +76,23 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
             var districts = 0;
             await Status().StartAsync("Contando distritos electorales", async ctx =>
             {
-                await using var context = await chrome.NewContextAsync();
-                var page = await context.NewPageAsync();
-                await page.GotoAsync("https://resultados.gob.ar/", new PageGotoOptions
+                await resilience.ExecuteAsync(async _ =>
                 {
-                    Timeout = 0,
-                    WaitUntil = WaitUntilState.NetworkIdle,
+                    await using var context = await chrome.NewContextAsync();
+                    var page = await context.NewPageAsync();
+                    await page.GotoAsync("https://resultados.gob.ar/", new PageGotoOptions
+                    {
+                        Timeout = 0,
+                        WaitUntil = WaitUntilState.NetworkIdle,
+                    });
+                    await page.GetByLabel("Filtro por ámbito").ClickAsync();
+                    await page.GetByLabel(new Regex(@"\s*Selecciona un distrito presionando enter")).ClickAsync();
+                    districts = 0;
+                    foreach (var district in await page.GetByRole(AriaRole.Option).AllAsync())
+                    {
+                        districts++;
+                    }
                 });
-                await page.GetByLabel("Filtro por ámbito").ClickAsync();
-                await page.GetByLabel(new Regex(@"\s*Selecciona un distrito presionando enter")).ClickAsync();
-                foreach (var district in await page.GetByRole(AriaRole.Option).AllAsync())
-                {
-                    districts++;
-                }
             });
 
             await Status().StartAsync("Indexando distritos electorales", async ctx =>
@@ -98,7 +102,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
 
                 await Parallel.ForEachAsync(values, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (i, c) =>
                 {
-                    var prepare = new PrepareTelegram(chrome, i, settings.Zip, progress);
+                    var prepare = new PrepareTelegram(chrome, resilience, settings, progress);
                     await prepare.ExecuteAsync();
                 });
             });
@@ -107,14 +111,14 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
         await Status().StartAsync("Descargando telegramas", async ctx =>
         {
             var progress = new Progress<string>(status => ctx.Status = status);
-            var path = Path.Combine(Constants.DefaultCacheDir, "telegrama");
+            var path = Path.Combine(settings.BaseDir, "telegrama");
             var districts = Directory.EnumerateFiles(path, "*.json");
 
             await Parallel.ForEachAsync(districts, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (x, c) =>
             {
                 var district = Newtonsoft.Json.JsonConvert.DeserializeObject<District>(await GzipFile.ReadAllTextAsync(x));
                 Debug.Assert(district != null);
-                var prepare = new DownloadTelegram(district, settings.Zip, progress);
+                var prepare = new DownloadTelegram(district, settings, progress);
                 await prepare.ExecuteAsync();
             });
         });
@@ -126,18 +130,17 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
     {
         try
         {
-            var path = Path.Combine(Constants.DefaultCacheDir, fileName);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetDirectoryName(fileName))!);
             
             if (zip)
             {
-                using var json = File.Create(Path.Combine(Constants.DefaultCacheDir, fileName + ".gz"));
+                using var json = File.Create(fileName + ".gz");
                 using var gzip = new GZipStream(json, CompressionLevel.Optimal);
                 await JsonSerializer.SerializeAsync(gzip, value, jsonOptions);
             }
             else
             {
-                using var json = File.Create(Path.Combine(Constants.DefaultCacheDir, fileName));
+                using var json = File.Create(fileName);
                 await JsonSerializer.SerializeAsync(json, value, jsonOptions);
             }
         }
@@ -147,7 +150,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
         }
     }
 
-    class DownloadTelegram(District district, bool zip, IProgress<string> progress)
+    class DownloadTelegram(District district, Settings settings, IProgress<string> progress)
     {
         public async Task ExecuteAsync()
         {
@@ -163,13 +166,13 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                     var circuitId = circuit.Name;
                     Debug.Assert(circuitId != null);
 
-                    var path = Path.Combine(Constants.DefaultCacheDir, "telegrama", districtId.ToString(), sectionId.ToString(), circuitId);
+                    var path = Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString(), circuitId);
                     Directory.CreateDirectory(path);
 
                     var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + station.Code + "/1");
                     Debug.Assert(!string.IsNullOrEmpty(scope));
                     var sdata = Newtonsoft.Json.Linq.JObject.Parse(scope);
-                    if (zip)
+                    if (settings.Zip)
                         await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json.gz"), sdata.ToString());
                     else
                         await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json"), sdata.ToString());
@@ -186,7 +189,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                     Debug.Assert(!string.IsNullOrEmpty(tiff));
 
                     dynamic tdata = Newtonsoft.Json.Linq.JObject.Parse(tiff);
-                    if (zip)
+                    if (settings.Zip)
                         await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json.gz"), tdata.ToString());
                     else
                         await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), tdata.ToString());
@@ -200,13 +203,14 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
         }
     }
 
-    class PrepareTelegram(IBrowser browser, int skip, bool zip, IProgress<string> progress)
+    class PrepareTelegram(IBrowser browser, ResiliencePipeline resilience, Settings settings, IProgress<string> progress)
     {
         public async Task ExecuteAsync()
         {
             await using var context = await browser.NewContextAsync();
             var page = await context.NewPageAsync();
             page.SetDefaultTimeout(5000);
+           
             var actions = new Stack<Func<Task>>();
 
             actions.Push(() => page.GotoAsync("https://resultados.gob.ar/", new PageGotoOptions
@@ -242,8 +246,12 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                 })
                 .Build();
 
-            foreach (var action in actions.Reverse())
-                await action();
+            // Resiliently execute the initial actions.
+            await resilience.ExecuteAsync(async _ =>
+            {
+                foreach (var action in actions.Reverse())
+                    await action();
+            });
 
             async Task<IDisposable> PushExecuteAsync(Func<Task> action)
             {
@@ -254,7 +262,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
 
             foreach (var district in await page.GetByRole(AriaRole.Option).AllAsync())
             {
-                if (count < skip)
+                if (count < settings.Skip)
                 {
                     count++;
                     continue;
@@ -311,8 +319,8 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser) : AsyncCommand<Teleg
                 var districtId = int.Parse(districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2]);
 
                 await SaveAsync(districts[^1], 
-                    Path.Combine("telegrama", $"{districtId}.json"), 
-                    zip);
+                    Path.Combine(settings.BaseDir, "telegrama", $"{districtId}.json"), 
+                    settings.Zip);
 
                 break;
             }

@@ -4,23 +4,37 @@ using System.IO.Compression;
 using Humanizer;
 using Spectre.Console.Cli;
 using static Spectre.Console.AnsiConsole;
+using static MenosRelato.Results;
 
 namespace MenosRelato.Commands;
 
 [Description("Descargar el dataset completo de resultados.")]
-internal class DownloadCommand(IHttpClientFactory factory) : AsyncCommand
+internal class DatasetCommand(IHttpClientFactory factory) : AsyncCommand<ElectionSettings>
 {
-    //const string paso = "https://www.argentina.gob.ar/sites/default/files/dine-resultados/2023-PROVISORIOS_PASO.zip";
+    const string paso = "https://www.argentina.gob.ar/sites/default/files/dine-resultados/2023-PROVISORIOS_PASO.zip";
     const string gral = "https://www.argentina.gob.ar/sites/default/files/2023_generales_0.zip";
-    readonly string stampfile = Path.Combine(Constants.DefaultCacheDir, "datos", Path.GetFileName(Path.ChangeExtension(gral, ".etag")));
-    readonly string csvdir = Path.Combine(Constants.DefaultCacheDir, "datos", "csv");
 
-    public override async Task<int> ExecuteAsync(CommandContext context)
+    public override async Task<int> ExecuteAsync(CommandContext context, ElectionSettings settings)
     {
+        if (settings.Election == ElectionKind.Ballotage)
+            return Error("Balotaje no esta soportado aun.");
+
+        var baseDir = Path.Combine(settings.BaseDir, "dataset");
+        var stampfile = Path.Combine(baseDir, "results.etag");
+        var csvdir = Path.Combine(baseDir, "csv");
+
         Directory.CreateDirectory(csvdir);
 
+        var resultsUrl = settings.Election switch
+        {
+            ElectionKind.Primary => paso,
+            ElectionKind.General => gral,
+            // TODO: add zip of ballotage
+            _ => throw new NotImplementedException()
+        };
+
         using var http = factory.CreateClient();
-        using var response = await http.GetAsync(gral, HttpCompletionOption.ResponseHeadersRead);
+        using var response = await http.GetAsync(resultsUrl, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
 
         Debug.Assert(response.Headers.ETag != null, "Couldn't get ETag from zip download response.");
@@ -29,7 +43,7 @@ internal class DownloadCommand(IHttpClientFactory factory) : AsyncCommand
             File.ReadAllText(stampfile) is not { } etag || 
             etag != response.Headers.ETag.Tag.Trim('"'))
         {
-            var zip = Path.Combine(Constants.DefaultCacheDir, "datos", Path.GetFileName(gral));
+            var zip = Path.Combine(baseDir, "results.zip");
             await Status().StartAsync("Descargando dataset actualizado", async ctx =>
             {
                 using var content = await response.Content.ReadAsStreamAsync();
@@ -68,7 +82,7 @@ internal class DownloadCommand(IHttpClientFactory factory) : AsyncCommand
         }
         else
         {
-            MarkupLine($"[green]✓[/] El dataset de elecciones generales 2023 esta actualizado.");
+            MarkupLine($"[green]✓[/] El dataset de elecciones {settings.Election.ToUserString().ToLowerInvariant()} {settings.Year} esta actualizado.");
         }
 
         return 0;

@@ -43,7 +43,6 @@ var services = new ServiceCollection()
                 return ValueTask.CompletedTask;
             },
         })
-        //.AddTimeout(TimeSpan.FromSeconds(20))
         .Build())
     .AddSingleton<IAgentService>(sp => new CachingAgentService(
         new CloudAgentService(sp.GetRequiredService<IConfiguration>())))
@@ -52,7 +51,8 @@ var services = new ServiceCollection()
         {
             http.BaseAddress = Constants.BaseAddress;
             http.DefaultRequestHeaders.UserAgent.ParseAdd(Constants.UserAgent);
-        }));
+        }))
+    .AddServices();
 
 var app = new CommandApp(new TypeRegistrar(services));
 // Register the app itself so commands can execute other commands
@@ -61,7 +61,7 @@ services.AddSingleton<ICommandApp>(app);
 app.Configure(config =>
 {
     config.SetApplicationName(ThisAssembly.Project.ToolCommandName);
-    config.AddCommand<DownloadCommand>("download");
+    config.AddCommand<DatasetCommand>("dataset");
     config.AddCommand<PrepareCommand>("prepare");
     config.AddCommand<DatabaseCommand>("db").IsHidden();
     config.AddCommand<TelegramCommand>("telegram");

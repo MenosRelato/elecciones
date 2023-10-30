@@ -18,19 +18,8 @@ namespace MenosRelato.Commands;
 [Description("Preparar el dataset completo de resultados en formato JSON")]
 internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Settings>
 {
-    public class Settings : CommandSettings
+    public class Settings : ElectionSettings
     {
-        [CommandOption("-y|--year")]
-        [Description("Año de la eleccion a cargar")]
-        [DefaultValue(2023)]
-        public int Year { get; set; } = 2023;
-
-        [CommandOption("-k|--kind")]
-        [Description("Tipo de eleccion a cargar")]
-        [DefaultValue(ElectionKind.General)]
-        public ElectionKind Kind { get; set; } = ElectionKind.General;
-
-
         [CommandOption("-j|--json")]
         [Description("Crear un archivo JSON de texto legible")]
         [DefaultValue(false)]
@@ -84,23 +73,25 @@ internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Set
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
-        if (!Directory.Exists(Constants.CsvDir) ||
-            Directory.EnumerateFiles(Constants.CsvDir, "*.csv").FirstOrDefault(x => Path.GetFileName(x).StartsWith("AmbitosElectorales")) is not { }  ambitos ||
-            Directory.EnumerateFiles(Constants.CsvDir, "*.csv").FirstOrDefault(x => Path.GetFileName(x).StartsWith("ResultadosElectorales")) is not { } results)
+        var csvDir = Path.Combine(settings.BaseDir, "dataset", "csv");
+
+        if (!Directory.Exists(csvDir) ||
+            Directory.EnumerateFiles(csvDir, "*.csv").FirstOrDefault(x => Path.GetFileName(x).StartsWith("AmbitosElectorales")) is not { }  ambitos ||
+            Directory.EnumerateFiles(csvDir, "*.csv").FirstOrDefault(x => Path.GetFileName(x).StartsWith("ResultadosElectorales")) is not { } results)
         {
             if (Prompt(new SelectionPrompt<string>()
                     .Title("Continuar procesando?")
                     .AddChoices(["Si", "No"])) == "No")
                 return Error("No hay dataset descargado a procesar.");
-            else if (await app.RunAsync(["dowload"]) is var exit && exit < 0)
+            else if (await app.RunAsync(["dataset", "-y", settings.Year.ToString(), "-e", settings.Election.ToUserString() ]) is var exit && exit < 0)
                 return exit;
             else
             {
-                ambitos = Directory.EnumerateFiles(Constants.CsvDir, "*.csv").FirstOrDefault(x => Path.GetFileName(x).StartsWith("AmbitosElectorales"));
+                ambitos = Directory.EnumerateFiles(csvDir, "*.csv").FirstOrDefault(x => Path.GetFileName(x).StartsWith("AmbitosElectorales"));
                 if (ambitos == null)
                     return Error("No se encontraron ambitos electorales a cargar.");
 
-                results = Directory.EnumerateFiles(Constants.CsvDir, "*.csv").FirstOrDefault(x => Path.GetFileName(x).StartsWith("ResultadosElectorales"));
+                results = Directory.EnumerateFiles(csvDir, "*.csv").FirstOrDefault(x => Path.GetFileName(x).StartsWith("ResultadosElectorales"));
                 if (results == null)
                     return Error("No se encontraron resultados electorales a cargar.");
             }
@@ -109,7 +100,7 @@ internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Set
         var es = CultureInfo.GetCultureInfo("es-AR");
         var first = true;
         var header = Array.Empty<string>();
-        var election = new Election(settings.Year, settings.Kind);
+        var election = new Election(settings.Year, settings.Election);
 
         await foreach (var line in File.ReadLinesAsync(ambitos, Encoding.UTF8))
         {
@@ -231,7 +222,7 @@ internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Set
             }
         });
 
-        var fileName = $"elecciones-{election.Year}-{election.Kind}";
+        var fileName = "election";
 
         if (settings.Json)
         {
@@ -245,19 +236,19 @@ internal class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Set
 
             if (settings.Zip)
             {
-                using var json = File.Create(Path.Combine(Constants.DefaultCacheDir, fileName + ".json.gz"));
+                using var json = File.Create(Path.Combine(settings.BaseDir, fileName + ".json.gz"));
                 using var zip = new GZipStream(json, CompressionLevel.Optimal);
                 await JsonSerializer.SerializeAsync(zip, election, options);
             }
             else
             {
-                using var json = File.Create(Path.Combine(Constants.DefaultCacheDir, fileName + ".json"));
+                using var json = File.Create(Path.Combine(settings.BaseDir, fileName + ".json"));
                 await JsonSerializer.SerializeAsync(json, election, options);
             }
         }
 
         // Always create the internal reference file for stats/processing.
-        using (var stream = File.Create(Path.Combine(Constants.DefaultCacheDir, fileName + ".ref.gz")))
+        using (var stream = File.Create(Path.Combine(settings.BaseDir, fileName + ".ref.gz")))
         {
             using var zip = new GZipStream(stream, CompressionLevel.Optimal);
             // For the GZip version, which we'll use to read and process, we want to preserve references 

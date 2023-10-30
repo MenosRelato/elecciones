@@ -5,26 +5,36 @@ using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
 using Microsoft.Azure.Storage.DataMovement;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console.Cli;
 using static Spectre.Console.AnsiConsole;
+using static MenosRelato.Results;
 
 namespace MenosRelato.Commands;
 
 // El usuario debe estar logoneado con azcopy login tambien.
 // Asume que 7zip esta instalado tambien
 [Description("Sube los datos descargados a Azure Blob storage")]
-public partial class UploadCommand(IConfiguration configuration) : AsyncCommand<UploadCommand.Settings>
+public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
 {
-    public class Settings : CommandSettings
+    [Service(ServiceLifetime.Transient)]
+    public class Settings(IConfiguration config) : StorageSettings(config)
     {
-        [Description("Conexion de Azure Storage a usar (connection string")]
-        [CommandOption("-s|--storage")]
-        public string? Storage { get; set; }
+        public override Spectre.Console.ValidationResult Validate()
+        {
+            if (base.Validate() is var result && !result.Successful)
+                return result;
+
+            if (!CloudStorageAccount.TryParse(Storage, out _))
+                return Spectre.Console.ValidationResult.Error("Por favor especificar una connexion de Azure Storage con permisos de escritura.");
+
+            return Spectre.Console.ValidationResult.Success();
+        }
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
-        var account = CloudStorageAccount.Parse(settings.Storage ?? configuration["Storage"]);
+        var account = CloudStorageAccount.Parse(settings.Storage);
         var blobClient = account.CreateCloudBlobClient();
         var container = blobClient.GetContainerReference("elecciones");
         await container.CreateIfNotExistsAsync();
@@ -35,7 +45,7 @@ public partial class UploadCommand(IConfiguration configuration) : AsyncCommand<
 
         await Status().StartAsync($"Subiendo archivos", async ctx =>
         {
-            var source = Path.Combine(Constants.DefaultCacheDir, "telegrama");
+            var source = Path.Combine(settings.BaseDir, "telegrama");
             var size = Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories).Sum(x => new FileInfo(x).Length);
             var progress = new DirectoryTransferContext
             {

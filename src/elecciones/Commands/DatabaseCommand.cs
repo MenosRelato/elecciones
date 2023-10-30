@@ -9,7 +9,6 @@ using Microsoft.Data.Sqlite;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Superpower;
-using Superpower.Parsers;
 using static MenosRelato.Results;
 using static Spectre.Console.AnsiConsole;
 
@@ -18,14 +17,12 @@ namespace MenosRelato.Commands;
 [Description("Cargar el dataset completo de resultados a una base de datos SQLite.")]
 internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
 {
-    public class Settings : CommandSettings
+    public class Settings : ElectionSettings
     {
         [CommandOption("-r|--reset")]
         [Description("Recrear la base de datos completa")]
         public bool Reset { get; set; }
     }
-
-    readonly string csvdir = Path.Combine(Constants.DefaultCacheDir, "datos", "csv");
 
     //"año","distrito_id","distrito_nombre","seccionprovincial_id","seccionprovincial_nombre","seccion_id","seccion_nombre"
     record ElectoralSection(
@@ -65,6 +62,7 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
+        var csvdir = Path.Combine(settings.BaseDir, "dataset", "csv");
         if (!Directory.Exists(csvdir))
             return Error("No hay dataset descargado a procesar.");
 
@@ -78,7 +76,7 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
 
         var es = CultureInfo.GetCultureInfo("es-AR");
 
-        var dbFile = Path.Combine(Constants.DefaultCacheDir, "elecciones.db");
+        var dbFile = Path.Combine(settings.BaseDir, "elecciones.db");
         if (settings.Reset && File.Exists(dbFile))
         {
             File.Delete(dbFile);
