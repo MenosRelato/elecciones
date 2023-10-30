@@ -207,7 +207,10 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
     {
         public async Task ExecuteAsync()
         {
-            await using var context = await browser.NewContextAsync();
+            await using var context = await browser.NewContextAsync(new()
+            {
+                ViewportSize = new() { Width = 2560, Height = 2560 },
+            });
             var page = await context.NewPageAsync();
             page.SetDefaultTimeout(5000);
            
