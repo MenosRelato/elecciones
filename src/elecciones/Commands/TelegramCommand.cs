@@ -227,8 +227,9 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             var circuitButton = page.GetByLabel(new Regex("Selecciona un circuito")).First;
             var localButton = page.GetByLabel(new Regex("Selecciona un local")).First;
             var stationButton = page.GetByLabel(new Regex("de mesa presionando enter")).First;
+            var districtFilter = page.GetByLabel("Filtro por ámbito");
 
-            actions.Push(() => page.GetByLabel("Filtro por ámbito").ClickAsync());
+            actions.Push(() => districtFilter.ClickAsync());
             actions.Push(() => districtButton.ClickAsync());
 
             var count = 0;
@@ -243,8 +244,11 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                     OnRetry = async x =>
                     {
                         MarkupLine($"[red]x[/] Reintento #{x.AttemptNumber + 1}");
-                        foreach (var action in actions.Reverse())
-                            await action();
+                        await resilience.ExecuteAsync(async _ =>
+                        {
+                            foreach (var action in actions.Reverse())
+                                await action();
+                        });
                     },
                 })
                 .Build();

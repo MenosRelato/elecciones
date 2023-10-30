@@ -35,7 +35,7 @@ var services = new ServiceCollection()
         {
             MaxRetryAttempts = int.MaxValue,
             BackoffType = DelayBackoffType.Linear,
-            Delay = TimeSpan.FromSeconds(5),
+            Delay = TimeSpan.FromSeconds(2),
             UseJitter = true,
             OnRetry = x =>
             {
