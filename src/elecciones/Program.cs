@@ -28,6 +28,7 @@ var services = new ServiceCollection()
             ExecutablePath = Chromium.Path,
             // Headless doesn't work for some reason.
             Headless = false,
+            Args = new[] { "--start-maximized" }
         });
     })
     .AddSingleton(_ => new ResiliencePipelineBuilder()

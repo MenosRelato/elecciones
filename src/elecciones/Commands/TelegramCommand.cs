@@ -1,16 +1,16 @@
 ﻿using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using NuGet.Common;
-using Polly.Retry;
 using Polly;
+using Polly.Retry;
 using Spectre.Console.Cli;
 using static MenosRelato.Results;
 using static Spectre.Console.AnsiConsole;
-using System.IO.Compression;
 
 namespace MenosRelato.Commands;
 
@@ -131,7 +131,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetDirectoryName(fileName))!);
-            
+
             if (zip)
             {
                 using var json = File.Create(fileName + ".gz");
@@ -213,9 +213,8 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             });
             var page = await context.NewPageAsync();
             page.SetDefaultTimeout(5000);
-           
-            var actions = new Stack<Func<Task>>();
 
+            var actions = new Stack<Func<Task>>();
             actions.Push(() => page.GotoAsync("https://resultados.gob.ar/", new PageGotoOptions
             {
                 Timeout = 0,
@@ -228,6 +227,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             var localButton = page.GetByLabel(new Regex("Selecciona un local")).First;
             var stationButton = page.GetByLabel(new Regex("de mesa presionando enter")).First;
             var districtFilter = page.GetByLabel("Filtro por ámbito");
+            var listBox = page.GetByRole(AriaRole.Listbox);
 
             actions.Push(() => districtFilter.ClickAsync());
             actions.Push(() => districtButton.ClickAsync());
@@ -253,6 +253,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 })
                 .Build();
 
+
             // Resiliently execute the initial actions.
             await resilience.ExecuteAsync(async _ =>
             {
@@ -267,7 +268,22 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 return new Poper(actions);
             }
 
-            foreach (var district in await page.GetByRole(AriaRole.Option).AllAsync())
+            async Task ResetFilters()
+            {
+                await resilience.ExecuteAsync(async _ => await page!.GetByText("Limpiar filtros").ClickAsync());
+                await resilience.ExecuteAsync(async _ =>
+                {
+                    // Don't reload the page and click filter again, to speed-up the cleaning.
+                    foreach (var action in actions!.Reverse().Skip(2))
+                        await action();
+                });
+            }
+
+            var districtNames = (await page.GetByRole(AriaRole.Option).AllAsync())
+                .Select(x => x.TextContentAsync().Result)
+                .ToList();
+
+            for (var di = 1; di <= districtNames.Count; di++)
             {
                 if (count < settings.Skip)
                 {
@@ -275,65 +291,98 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                     continue;
                 }
 
-                using var dc = await PushExecuteAsync(() => district.ClickAsync());
+                var district = districtNames[di - 1];
+                Debug.Assert(district != null);
+
+                using var dc = await PushExecuteAsync(async () =>
+                {
+                    // If we try to re-select a previously selected district, the dropdown won't select anything :(
+                    var idx = di == 1 ? districtNames.Count : 1;
+                    await page.ClickAsync($"[role=listbox] [role=option]:nth-child({idx})");
+                    await districtButton.ClickAsync();
+                    await page.ClickAsync($"[role=listbox] [role=option]:nth-child({di})");
+                });
+
                 districts.Add(new(await retry.ExecuteAsync(async _ => await districtButton.TextContentAsync())));
 
                 using var ds = await PushExecuteAsync(() => sectionButton.ClickAsync());
+                var sectionNames = (await page.GetByRole(AriaRole.Option).AllAsync())
+                    .Select(x => x.TextContentAsync().Result)
+                    .ToList();
 
-                foreach (var section in await page.GetByRole(AriaRole.Option).AllAsync())
+                for (var si = 1; si <= sectionNames.Count; si++)
                 {
-                    using var sc = await PushExecuteAsync(() => section.ClickAsync());
-                    districts[^1].Sections.Add(new(await retry.ExecuteAsync(async _ => await sectionButton.TextContentAsync())));
-
-                    using var ss = await PushExecuteAsync(() => circuitButton.ClickAsync());
-
-                    foreach (var circuit in await page.GetByRole(AriaRole.Option).AllAsync())
+                    var section = sectionNames[di - 1];
+                    using (var sc = await PushExecuteAsync(() => page.ClickAsync($"[role=listbox] [role=option]:nth-child({si})")))
                     {
-                        using var cc = await PushExecuteAsync(() => circuit.ClickAsync());
-                        districts[^1].Sections[^1].Circuits.Add(new(await retry.ExecuteAsync(async _ => await circuitButton.TextContentAsync())));
+                        districts[^1].Sections.Add(new(section));
 
-                        using var cs = await PushExecuteAsync(() => localButton.ClickAsync());
+                        using var ss = await PushExecuteAsync(() => circuitButton.ClickAsync());
+                        var circuitNames = (await page.GetByRole(AriaRole.Option).AllAsync())
+                            .Select(x => x.TextContentAsync().Result)
+                            .ToList();
 
-                        foreach (var local in await page.GetByRole(AriaRole.Option).AllAsync())
+                        for (var ci = 1; ci <= circuitNames.Count; ci++)
                         {
-                            using var lc = await PushExecuteAsync(() => local.ClickAsync());
-                            districts[^1].Sections[^1].Circuits[^1].Institutions.Add(new(await retry.ExecuteAsync(async _ => await localButton.TextContentAsync())));
-                            progress.Report($"{districts[^1].Name} - {districts[^1].Sections[^1].Name} - {districts[^1].Sections[^1].Circuits[^1].Name} - {districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Name}");
-
-                            using var ls = await PushExecuteAsync(() => stationButton.ClickAsync());
-                            
-                            foreach (var station in await page.GetByRole(AriaRole.Option).AllAsync())
+                            var circuit = circuitNames[ci - 1];
+                            using (var cc = await PushExecuteAsync(() => page.ClickAsync($"[role=listbox] [role=option]:nth-child({ci})")))
                             {
-                                using var tc = await PushExecuteAsync(() => station.ClickAsync());
-                                var code = await retry.ExecuteAsync(async _ => await stationButton.TextContentAsync());
-                                var url = await retry.ExecuteAsync(async _ => await page.GetByText("Aplicar filtros").GetAttributeAsync("href"));
+                                districts[^1].Sections[^1].Circuits.Add(new(await retry.ExecuteAsync(async _ => await circuitButton.TextContentAsync())));
 
-                                Debug.Assert(code != null && url != null);
-                                districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Stations.Add(new(code, url));
+                                using var cs = await PushExecuteAsync(() => localButton.ClickAsync());
+                                var localNames = (await page.GetByRole(AriaRole.Option).AllAsync())
+                                    .Select(x => x.TextContentAsync().Result)
+                                    .ToList();
 
-                                await retry.ExecuteAsync(async _ => await stationButton.ClickAsync());
-
-                                var districtFile = Path.Combine(settings.BaseDir, "telegrama", $"{code[..2]}.json{(settings.Zip ? "gz" : "")}");
-                                if (File.Exists(districtFile))
+                                for (var li = 1; li <= localNames.Count; li++)
                                 {
-                                    Result(0, $"Distrito {districts[^1].Name} ya esta indexado");
-                                    return;
+                                    var local = localNames[li - 1];
+                                    using (var lc = await PushExecuteAsync(() => page.ClickAsync($"[role=listbox] [role=option]:nth-child({li})")))
+                                    {
+                                        districts[^1].Sections[^1].Circuits[^1].Institutions.Add(new(local));
+                                        progress.Report($"{districts[^1].Name} - {districts[^1].Sections[^1].Name} - {districts[^1].Sections[^1].Circuits[^1].Name} - {districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Name}");
+
+                                        using var ls = await PushExecuteAsync(() => stationButton.ClickAsync());
+                                        var stationNames = (await page.GetByRole(AriaRole.Option).AllAsync())
+                                            .Select(x => x.TextContentAsync().Result)
+                                            .ToList();
+
+                                        for (var ti = 1; ti <= stationNames.Count; ti++)
+                                        {
+                                            var code = stationNames[ti - 1];
+                                            using var tc = await PushExecuteAsync(() => page.ClickAsync($"[role=listbox] [role=option]:nth-child({ti})"));
+                                            var url = await retry.ExecuteAsync(async _ => await page.GetByText("Aplicar filtros").GetAttributeAsync("href"));
+
+                                            Debug.Assert(code != null && url != null);
+                                            districts[^1].Sections[^1].Circuits[^1].Institutions[^1].Stations.Add(new(code, url));
+
+                                            await retry.ExecuteAsync(async _ => await stationButton.ClickAsync());
+
+                                            var districtFile = Path.Combine(settings.BaseDir, "telegrama", $"{code[..2]}.json{(settings.Zip ? "gz" : "")}");
+                                            if (File.Exists(districtFile))
+                                            {
+                                                Result(0, $"Distrito {districts[^1].Name} ya esta indexado");
+                                                return;
+                                            }
+                                        }
+                                    }
+
+                                    // Reset filters since previous dropdowns may now be stale/filtered.
+                                    await ResetFilters();
                                 }
                             }
 
-                            await retry.ExecuteAsync(async _ => await localButton.ClickAsync());
+                            await ResetFilters();
                         }
 
-                        await retry.ExecuteAsync(async _ => await circuitButton.ClickAsync());
                     }
-
-                    await retry.ExecuteAsync(async _ => await sectionButton.ClickAsync());
+                    await ResetFilters();
                 }
 
                 var districtId = int.Parse(districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2]);
 
-                await SaveAsync(districts[^1], 
-                    Path.Combine(settings.BaseDir, "telegrama", $"{districtId}.json"), 
+                await SaveAsync(districts[^1],
+                    Path.Combine(settings.BaseDir, "telegrama", $"{districtId}.json"),
                     settings.Zip);
 
                 break;
@@ -342,7 +391,15 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
         class Poper(Stack<Func<Task>> stack) : IDisposable
         {
-            public void Dispose() => stack.Pop();
+            bool disposed;
+            public void Dispose()
+            {
+                if (!disposed)
+                {
+                    disposed = true;
+                    stack.Pop();
+                }
+            }
         }
     }
 }
