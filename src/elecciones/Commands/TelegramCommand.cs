@@ -205,6 +205,10 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                     var img = Convert.FromBase64String((string)tdata.encodingBinary);
                     var file = (string)tdata.fileName;
                     await File.WriteAllBytesAsync(Path.Combine(path, file), img);
+
+                    // Before saving the telegrama, we remove the binary data.
+                    ((JObject)tdata).Remove("encodingBinary");
+
                     if (settings.Zip)
                         await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json.gz"), tdata.ToString());
                     else
