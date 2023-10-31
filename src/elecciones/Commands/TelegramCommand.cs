@@ -112,13 +112,14 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         {
             var progress = new Progress<string>(status => ctx.Status = status);
             var path = Path.Combine(settings.BaseDir, "telegrama");
-            var districts = Directory.EnumerateFiles(path, "*.json");
+            var districts = Directory.EnumerateFiles(path, "*.json" + (settings.Zip ? ".gz" : ""));
 
             await Parallel.ForEachAsync(districts, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (x, c) =>
             {
-                var district = Newtonsoft.Json.JsonConvert.DeserializeObject<District>(await GzipFile.ReadAllTextAsync(x));
+                var json = x.EndsWith(".gz") ? await GzipFile.ReadAllTextAsync(x) : await File.ReadAllTextAsync(x);
+                var district = Newtonsoft.Json.JsonConvert.DeserializeObject<District>(json);
                 Debug.Assert(district != null);
-                var prepare = new DownloadTelegram(district, settings, progress);
+                var prepare = new DownloadTelegram(district, settings, resilience, progress);
                 await prepare.ExecuteAsync();
             });
         });
@@ -150,7 +151,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         }
     }
 
-    class DownloadTelegram(District district, Settings settings, IProgress<string> progress)
+    class DownloadTelegram(District district, Settings settings, ResiliencePipeline resilience, IProgress<string> progress)
     {
         public async Task ExecuteAsync()
         {
@@ -169,9 +170,15 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                     var path = Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString(), circuitId);
                     Directory.CreateDirectory(path);
 
-                    var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + station.Code + "/1");
-                    Debug.Assert(!string.IsNullOrEmpty(scope));
-                    var sdata = Newtonsoft.Json.Linq.JObject.Parse(scope);
+                    var sdata = await resilience.ExecuteAsync(async _ =>
+                    {
+                        var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + station.Code + "/1");
+                        Debug.Assert(!string.IsNullOrEmpty(scope));
+                        // NOTE: if the site is temporarily down (it has happened), it will return 
+                        // error html instead of json, so we let that go through the retry pipeline.
+                        return Newtonsoft.Json.Linq.JObject.Parse(scope);
+                    });
+
                     if (settings.Zip)
                         await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json.gz"), sdata.ToString());
                     else
@@ -179,16 +186,21 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                     var location = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Select(x => x.ToString()));
 
-                    var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + station.Code);
-                    if (string.IsNullOrEmpty(tiff))
+                    dynamic? tdata = await resilience.ExecuteAsync(async _ =>
+                    {
+                        var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + station.Code);
+                        if (string.IsNullOrEmpty(tiff))
+                            return null;
+
+                        return Newtonsoft.Json.Linq.JObject.Parse(tiff);
+                    });
+
+                    if (tdata is null)
                     {
                         progress.Report($"[red]x[/] No hay telegrama {location} - {station.Code}");
                         continue;
                     }
 
-                    Debug.Assert(!string.IsNullOrEmpty(tiff));
-
-                    dynamic tdata = Newtonsoft.Json.Linq.JObject.Parse(tiff);
                     if (settings.Zip)
                         await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json.gz"), tdata.ToString());
                     else
