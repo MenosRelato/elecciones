@@ -309,7 +309,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                 for (var si = 1; si <= sectionNames.Count; si++)
                 {
-                    var section = sectionNames[di - 1];
+                    var section = sectionNames[si - 1];
                     using (var sc = await PushExecuteAsync(() => page.ClickAsync($"[role=listbox] [role=option]:nth-child({si})")))
                     {
                         districts[^1].Sections.Add(new(section));
