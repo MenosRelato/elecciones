@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console.Cli;
 using static Spectre.Console.AnsiConsole;
 using static MenosRelato.Results;
+using Spectre.Console;
 
 namespace MenosRelato.Commands;
 
@@ -43,12 +44,43 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
             PublicAccess = BlobContainerPublicAccessType.Container
         });
 
-        await Status().StartAsync($"Subiendo archivos", async ctx =>
+        var source = Path.Combine(settings.BaseDir);
+        var size = Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories)
+            .Where(x => Path.GetExtension(x) != ".csv")
+            .Sum(x => new FileInfo(x).Length);
+
+        var skipped = 0l;
+        var electionDir = settings.BaseDir;
+        var relativeDir = electionDir.Substring(Constants.DefaultCacheDir.Length + 1).Replace('\\', '/');
+
+        await Progress()
+            .AutoClear(false)
+            .Columns(
+            [
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),  
+                new PercentageColumn(),   
+                new RemainingTimeColumn(),
+                new SpinnerColumn(),      
+            ])
+            .StartAsync(async ctx =>
         {
-            var source = Path.Combine(settings.BaseDir, "telegrama");
-            var size = Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories).Sum(x => new FileInfo(x).Length);
+            var task = ctx.AddTask($"Subiendo {relativeDir} {size.Bytes()}", new ProgressTaskSettings { MaxValue = size });
             var progress = new DirectoryTransferContext
             {
+                ShouldTransferCallbackAsync = async (sourcePath, destinationPath) =>
+                {
+                    if (destinationPath is not ICloudBlob blob ||
+                        sourcePath is not string sourceFile)
+                        return false;
+
+                    // Never transfer the raw unprocessed csv files from the dataset
+                    if (Path.GetExtension(sourceFile) == ".csv")
+                        return false;
+
+                    // Let the overwrite callback do the hashing check
+                    return true;
+                },
                 ShouldOverwriteCallbackAsync = async (sourcePath, destinationPath) =>
                 {
                     if (destinationPath is not ICloudBlob blob || 
@@ -59,13 +91,19 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
 
                     // Quickly check if the file is the same size and exit, since hashing is more expensive
                     if (new FileInfo(sourceFile).Length == blob.Properties.Length)
+                    {
+                        skipped += blob.Properties.Length;
                         return false;
+                    }
 
                     var targetHash = blob.Properties.ContentMD5;
 
                     // Calculate MD5 of sourceFile
                     using var stream = File.OpenRead(sourceFile);
                     var sourceHash = Convert.ToBase64String(await MD5.HashDataAsync(stream));
+
+                    if (sourceHash == targetHash)
+                        skipped += blob.Properties.Length;
 
                     return sourceHash != targetHash;
                 },
@@ -79,30 +117,14 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
                     return Task.CompletedTask;
                 },
                 ProgressHandler = new Progress<TransferStatus>(
-                    (progress) => ctx.Status = $"Subiendo {source} ({progress.BytesTransferred.Bytes()} of {size.Bytes()})")
+                    (progress) => task.Value(progress.BytesTransferred + skipped))
             };
 
             await TransferManager.UploadDirectoryAsync(
                 source, 
-                container.GetDirectoryReference(new DirectoryInfo(source).Name),
-                new UploadDirectoryOptions {  Recursive = true }, 
+                container.GetDirectoryReference(source.Substring(Constants.DefaultCacheDir.Length + 1).Replace('\\', '/')),
+                new UploadDirectoryOptions { Recursive = true }, 
                 progress);
-
-            foreach (var gz in Directory.EnumerateFiles(Constants.DefaultCacheDir, "*.gz"))
-            {
-                var blob = container.GetBlockBlobReference(Path.GetFileName(gz));
-                await TransferManager.UploadAsync(gz, blob, 
-                    new UploadOptions 
-                    {  
-                        DestinationAccessCondition = AccessCondition.GenerateIfNotExistsCondition()
-                    }, 
-                    new SingleTransferContext
-                    {
-                        ProgressHandler = progress.ProgressHandler,
-                        ShouldOverwriteCallbackAsync = progress.ShouldOverwriteCallbackAsync,
-                        SetAttributesCallbackAsync = progress.SetAttributesCallbackAsync,
-                    });
-            }
         });
 
         MarkupLine("[green]✓[/] Completado");
