@@ -114,7 +114,8 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             var progress = new Progress<string>(status => ctx.Status = status);
             var path = Path.Combine(settings.BaseDir, "telegrama");
             var districts = new[] { "*.json", "*.json.gz" }
-                .SelectMany(ext => Directory.EnumerateFiles(path, ext));
+                .SelectMany(ext => Directory.EnumerateFiles(path, ext))
+                .Skip(settings.Skip).Take(settings.Take);
 
             await Parallel.ForEachAsync(districts, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (x, c) =>
             {
@@ -160,8 +161,8 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             using var http = httpFactory.CreateClient();
             http.BaseAddress = new Uri("https://resultados.gob.ar");
 
-            var total = district.Sections.SelectMany(s => s.Circuits).SelectMany(i => i.Institutions).SelectMany(s => s.Stations).Count();
-            var current = 0;
+            double total = district.Sections.SelectMany(s => s.Circuits).SelectMany(i => i.Institutions).SelectMany(s => s.Stations).Count();
+            double current = 0;
 
             foreach (var circuit in district.Sections.SelectMany(s => s.Circuits))
             {
