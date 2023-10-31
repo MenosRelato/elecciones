@@ -10,11 +10,20 @@ using MenosRelato;
 using Spectre.Console;
 using Microsoft.Playwright;
 using NuGet.Common;
+using System.Net;
+using Mono.Options;
 
 var config = new ConfigurationManager()
     .AddUserSecrets(ThisAssembly.Project.UserSecretsId)
     .AddEnvironmentVariables()
     .Build();
+
+string? proxy = default;
+
+new OptionSet
+{
+    { "proxy=", x => proxy = x },
+}.Parse(args);
 
 var services = new ServiceCollection()
     .AddSingleton<IConfiguration>(config)
@@ -47,11 +56,14 @@ var services = new ServiceCollection()
         .Build())
     .AddSingleton<IAgentService>(sp => new CachingAgentService(
         new CloudAgentService(sp.GetRequiredService<IConfiguration>())))
-    .AddHttpClient().ConfigureHttpClientDefaults(c => c.ConfigureHttpClient(
-        http =>
+    .AddHttpClient()
+        .ConfigureHttpClientDefaults(c => c
+        .ConfigureHttpClient(http => http.DefaultRequestHeaders.UserAgent.ParseAdd(Constants.UserAgent))
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
         {
-            http.BaseAddress = Constants.BaseAddress;
-            http.DefaultRequestHeaders.UserAgent.ParseAdd(Constants.UserAgent);
+            AllowAutoRedirect = false,
+            AutomaticDecompression = DecompressionMethods.All,
+            Proxy = proxy is not null ? new WebProxy(proxy) : null,
         }))
     .AddServices();
 

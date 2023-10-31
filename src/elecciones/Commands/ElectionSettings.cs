@@ -17,5 +17,9 @@ public class ElectionSettings : CommandSettings
     [DefaultValue(2023)]
     public int Year { get; set; } = 2023;
 
+    [CommandOption("--proxy")]
+    [Description("Utilizar un proxy para HTTP")]
+    public string? Proxy { get; set; }
+
     public string BaseDir => Path.Combine(Constants.DefaultCacheDir, Year.ToString(), Election.ToUserString().ToLowerInvariant());
 }

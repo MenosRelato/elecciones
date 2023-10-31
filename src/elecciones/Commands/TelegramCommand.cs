@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
+using Newtonsoft.Json.Linq;
 using NuGet.Common;
 using Polly;
 using Polly.Retry;
@@ -15,7 +16,7 @@ using static Spectre.Console.AnsiConsole;
 namespace MenosRelato.Commands;
 
 [Description("Descarga telegramas de la eleccion con metadata en formato JSON (compactado con GZip)")]
-internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline resilience) : AsyncCommand<TelegramCommand.Settings>
+internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline resilience, IHttpClientFactory httpFactory) : AsyncCommand<TelegramCommand.Settings>
 {
     public class Settings : ElectionSettings
     {
@@ -119,7 +120,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 var json = x.EndsWith(".gz") ? await GzipFile.ReadAllTextAsync(x) : await File.ReadAllTextAsync(x);
                 var district = Newtonsoft.Json.JsonConvert.DeserializeObject<District>(json);
                 Debug.Assert(district != null);
-                var prepare = new DownloadTelegram(district, settings, resilience, progress);
+                var prepare = new DownloadTelegram(district, settings, resilience, httpFactory, progress);
                 await prepare.ExecuteAsync();
             });
         });
@@ -151,11 +152,11 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         }
     }
 
-    class DownloadTelegram(District district, Settings settings, ResiliencePipeline resilience, IProgress<string> progress)
+    class DownloadTelegram(District district, Settings settings, ResiliencePipeline resilience, IHttpClientFactory httpFactory, IProgress<string> progress)
     {
         public async Task ExecuteAsync()
         {
-            using var http = Constants.CreateHttp();
+            using var http = httpFactory.CreateClient();
             http.BaseAddress = new Uri("https://resultados.gob.ar");
 
             foreach (var circuit in district.Sections.SelectMany(s => s.Circuits))
@@ -170,13 +171,22 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                     var path = Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString(), circuitId);
                     Directory.CreateDirectory(path);
 
+                    dynamic? tdata = await resilience.ExecuteAsync(async _ =>
+                    {
+                        var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + station.Code);
+                        if (string.IsNullOrEmpty(tiff))
+                            return null;
+
+                        return JObject.Parse(tiff);
+                    });
+
                     var sdata = await resilience.ExecuteAsync(async _ =>
                     {
                         var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + station.Code + "/1");
                         Debug.Assert(!string.IsNullOrEmpty(scope));
                         // NOTE: if the site is temporarily down (it has happened), it will return 
                         // error html instead of json, so we let that go through the retry pipeline.
-                        return Newtonsoft.Json.Linq.JObject.Parse(scope);
+                        return JObject.Parse(scope);
                     });
 
                     if (settings.Zip)
@@ -186,28 +196,20 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                     var location = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Select(x => x.ToString()));
 
-                    dynamic? tdata = await resilience.ExecuteAsync(async _ =>
-                    {
-                        var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + station.Code);
-                        if (string.IsNullOrEmpty(tiff))
-                            return null;
-
-                        return Newtonsoft.Json.Linq.JObject.Parse(tiff);
-                    });
-
                     if (tdata is null)
                     {
                         progress.Report($"[red]x[/] No hay telegrama {location} - {station.Code}");
                         continue;
                     }
 
+                    var img = Convert.FromBase64String((string)tdata.encodingBinary);
+                    var file = (string)tdata.fileName;
+                    await File.WriteAllBytesAsync(Path.Combine(path, file), img);
                     if (settings.Zip)
                         await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json.gz"), tdata.ToString());
                     else
                         await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), tdata.ToString());
 
-                    var img = Convert.FromBase64String((string)tdata.encodingBinary);
-                    await File.WriteAllBytesAsync(Path.Combine(path, station.Code + ".png"), img);
 
                     progress.Report($"Descargado telegrama {location} - {station.Code}");
                 }
