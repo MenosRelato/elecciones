@@ -39,7 +39,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         [CommandOption("-z|--zip")]
         [Description("Comprimir JSON de metadata con GZip")]
         [DefaultValue(true)]
-        public bool Zip { get; set; } = true;
+        public bool Zip { get; set; }
     }
 
     record District(string? Name)
@@ -113,7 +113,8 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         {
             var progress = new Progress<string>(status => ctx.Status = status);
             var path = Path.Combine(settings.BaseDir, "telegrama");
-            var districts = Directory.EnumerateFiles(path, "*.json" + (settings.Zip ? ".gz" : ""));
+            var districts = new[] { "*.json", "*.json.gz" }
+                .SelectMany(ext => Directory.EnumerateFiles(path, ext));
 
             await Parallel.ForEachAsync(districts, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (x, c) =>
             {
@@ -159,10 +160,16 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             using var http = httpFactory.CreateClient();
             http.BaseAddress = new Uri("https://resultados.gob.ar");
 
+            var total = district.Sections.SelectMany(s => s.Circuits).SelectMany(i => i.Institutions).SelectMany(s => s.Stations).Count();
+            var current = 0;
+
             foreach (var circuit in district.Sections.SelectMany(s => s.Circuits))
             {
                 foreach (var station in circuit.Institutions.SelectMany(i => i.Stations))
                 {
+                    current++;
+                    progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code})");
+
                     var districtId = int.Parse(station.Code[..2]);
                     var sectionId = int.Parse(station.Code[2..5]);
                     var circuitId = circuit.Name;
@@ -170,6 +177,14 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                     var path = Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString(), circuitId);
                     Directory.CreateDirectory(path);
+
+                    if (File.Exists(Path.Combine(path, station.Code + ".tiff")))
+                    {
+                        progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code}[green]✓[/])");
+                        continue;
+                    }
+
+                    progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code})");
 
                     dynamic? tdata = await resilience.ExecuteAsync(async _ =>
                     {
@@ -214,8 +229,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                     else
                         await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), tdata.ToString());
 
-
-                    progress.Report($"Descargado telegrama {location} - {station.Code}");
+                    //progress.Report($"Descargado telegrama {location} - {station.Code}");
                 }
             }
         }
