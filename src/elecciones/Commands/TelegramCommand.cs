@@ -102,7 +102,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                 await Parallel.ForEachAsync(values, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (i, c) =>
                 {
-                    var prepare = new PrepareTelegram(chrome, resilience, settings, progress);
+                    var prepare = new PrepareTelegram(chrome, resilience, settings.BaseDir, i, settings.Zip, progress);
                     await prepare.ExecuteAsync();
                 });
             });
@@ -203,14 +203,11 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         }
     }
 
-    class PrepareTelegram(IBrowser browser, ResiliencePipeline resilience, Settings settings, IProgress<string> progress)
+    class PrepareTelegram(IBrowser browser, ResiliencePipeline resilience, string baseDir, int skip, bool zip, IProgress<string> progress)
     {
         public async Task ExecuteAsync()
         {
-            await using var context = await browser.NewContextAsync(new()
-            {
-                ViewportSize = new() { Width = 2560, Height = 2560 },
-            });
+            await using var context = await browser.NewContextAsync();
             var page = await context.NewPageAsync();
             page.SetDefaultTimeout(5000);
 
@@ -285,7 +282,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
             for (var di = 1; di <= districtNames.Count; di++)
             {
-                if (count < settings.Skip)
+                if (count < skip)
                 {
                     count++;
                     continue;
@@ -358,7 +355,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                                             await retry.ExecuteAsync(async _ => await stationButton.ClickAsync());
 
-                                            var districtFile = Path.Combine(settings.BaseDir, "telegrama", $"{code[..2]}.json{(settings.Zip ? "gz" : "")}");
+                                            var districtFile = Path.Combine(baseDir, "telegrama", $"{code[..2]}.json{(zip ? "gz" : "")}");
                                             if (File.Exists(districtFile))
                                             {
                                                 Result(0, $"Distrito {districts[^1].Name} ya esta indexado");
@@ -382,8 +379,8 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 var districtId = int.Parse(districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2]);
 
                 await SaveAsync(districts[^1],
-                    Path.Combine(settings.BaseDir, "telegrama", $"{districtId}.json"),
-                    settings.Zip);
+                    Path.Combine(baseDir, "telegrama", $"{districtId}.json"),
+                    zip);
 
                 break;
             }
