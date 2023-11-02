@@ -1,417 +1,383 @@
 ﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
-using System.ComponentModel;
-using System.Globalization;
-using System.Reflection;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
 namespace MenosRelato;
 
 public static class ElectionExtensions
 {
+    public static void AddRange<T>(this ICollection<T> collection, IEnumerable<T> values)
+    {
+        foreach (var value in values)
+            collection.Add(value);
+    }
+
     public static IEnumerable<Ballot> GetBallots(this Election election) => election.Districts.SelectMany(d => d.GetBallots());
 
-    public static IEnumerable<Ballot> GetBallots(this District district) => district.Provincials.SelectMany(x => x.GetBallots());
-
-    public static IEnumerable<Ballot> GetBallots(this Provincial provincial) => provincial.Sections.SelectMany(s => s.GetBallots());
+    public static IEnumerable<Ballot> GetBallots(this District district) => district.Sections.SelectMany(x => x.GetBallots());
 
     public static IEnumerable<Ballot> GetBallots(this Section section) => section.Circuits.SelectMany(c => c.GetBallots());
 
     public static IEnumerable<Ballot> GetBallots(this Circuit circuit) => circuit.Stations.SelectMany(b => b.Ballots);
-
-    public static string ToUserString(this ElectionKind kind) => kind switch 
-    { 
-        ElectionKind.Primary => "PASO", 
-        ElectionKind.General => "GENERAL", 
-        ElectionKind.Ballotage => "BALOTAJE", 
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null) 
-    };
-
-    public static string ToUserString(this BallotKind kind) => kind switch
-    {
-        BallotKind.Positive => "POSITIVO",
-        BallotKind.Blank => "EN BLANCO",
-        BallotKind.Null => "NULO",
-        BallotKind.Appealed => "RECURRIDO",
-        BallotKind.Contested => "IMPUGNADO",
-        BallotKind.Command => "COMANDO",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-    };
 }
 
-public record Election(int Year, ElectionKind Kind)
+/// <summary>
+/// Useful statistics by party id and stats type.
+/// </summary>
+public class Stats
 {
+    /// <summary>
+    /// This is the sum of all values divided by the number of values. It gives a measure of the central location of the data.
+    /// </summary>
+    public Dictionary<string, double> Mean { get; init; } = new();
+    /// <summary>
+    /// This is the middle value in a sorted list of values. It divides the data into two halves and is less affected by outliers than the mean.
+    /// </summary>
+    public Dictionary<string, double> Median { get; init; } = new();
+    /// <summary>
+    /// First quartile (25th percentile)
+    /// </summary>
+    public Dictionary<string, double> LowerQuartile { get; init; } = new();
+    /// <summary>
+    /// Third quartile (75th percentile)
+    /// </summary>
+    public Dictionary<string, double> UpperQuartile { get; init; } = new();
+    /// <summary>
+    /// The IQR is the range between the first quartile (25th percentile) and the third quartile (75th percentile), and is used to measure statistical dispersion.
+    /// </summary>
+    public Dictionary<string, double> InterquartileRange { get; init; } = new();
+    /// <summary>
+    /// This measures the amount of variation or dispersion in the set of values. A low standard deviation indicates that values are close to the mean, while a high standard deviation indicates that the values are spread out over a wider range.
+    /// </summary>
+    public Dictionary<string, double> StandardDeviation { get; init; } = new();
+    /// <summary>
+    ///  This is the square of the standard deviation. It gives a measure of how the data is spread out around the mean.
+    /// </summary>
+    public Dictionary<string, double> Variance { get; init; } = new();
+}
+
+public record Election(int Year, string Kind)
+{
+    readonly IndexedCollection<string, Party> parties = new(x => x.Name);
+    readonly IndexedCollection<int, Position> positions = new(x => x.Id);
+    readonly IndexedCollection<int, District> districts = new(x => x.Id);
+
     // Serialized just for reference.
-    public Dictionary<byte, string> Ballots { get; } = typeof(BallotKind)
-        .GetMembers(BindingFlags.Public | BindingFlags.Static)
-        .OfType<FieldInfo>()
-        .Where(x => x.Attributes.HasFlag(FieldAttributes.Literal))
-        .Select(x => new { x.GetCustomAttribute<DescriptionAttribute>()!.Description, Value = (byte)x.GetValue(null)! })
-        .ToDictionary(x => x.Value, x => x.Description);
+    //public Dictionary<byte, string> Ballots { get; } = typeof(BallotKind)
+    //    .GetMembers(BindingFlags.Public | BindingFlags.Static)
+    //    .OfType<FieldInfo>()
+    //    .Where(x => x.Attributes.HasFlag(FieldAttributes.Literal))
+    //    .Select(x => new { x.GetCustomAttribute<DescriptionAttribute>()!.Description, Value = (byte)x.GetValue(null)! })
+    //    .ToDictionary(x => x.Value, x => x.Description);
 
-    public List<Party> Parties { get; } = new();
-    public List<Position> Positions { get; } = new();
-    public List<District> Districts { get; } = new();
+    [JsonIgnore, Newtonsoft.Json.JsonIgnore]
+    public IList<Party> Parties => parties;
+    [JsonIgnore, Newtonsoft.Json.JsonIgnore]
+    public IList<Position> Positions => positions;
 
-    public Party? GetOrAddParty(int? id, string? name)
+    public IList<District> Districts
     {
-        if (id is null || name is null)
+        get => districts;
+        set => districts.AddRange(value);
+    }
+    
+    public Stats? Stats { get; set; }
+
+    public Party? GetOrAddParty(string? name)
+    {
+        if (name is null)
             return null;
 
-        if (Parties.FirstOrDefault(p => p.Id == id) is { } party)
+        if (parties.TryGetValue(name, out var party))
             return party;
 
-        party = new Party(id.Value, name);
-        Parties.Add(party);
+        party = new Party(name);
+        parties.Add(party);
         return party;
     }
 
     public Position GetOrAddPosition(int id, string name)
     {
-        if (Positions.FirstOrDefault(p => p.Id == id) is { } position)
+        if (positions.TryGetValue(id, out var position))
             return position;
 
         position = new Position(id, name);
-        Positions.Add(position);
+        positions.Add(position);
         return position;
     }
 
     public District GetOrAddDistrict(int id, string name)
     {
-        if (Districts.FirstOrDefault(d => d.Id == id) is { } district)
+        if (districts.TryGetValue(id, out var district))
             return district;
 
         district = new District(id, name);
-        Districts.Add(district);
+        districts.Add(district);
         return district;
     }
 }
 
-[TypeConverter(typeof(ElectionKindConverter))]
-public enum ElectionKind : byte
+public static class ElectionKind
 {
-    [Description("PASO")]
-    Primary,
-    [Description("GENERAL")]
-    General,
-    [Description("BALOTAJE")]
-    Ballotage
+    public const string Primary = "PASO";
+    public const string General = "GENERAL";
+    public const string Ballotage = "BALOTAJE";
 }
 
-public class ElectionKindConverter : EnumConverter
+public static class BallotKind
 {
-    public ElectionKindConverter() : base(typeof(ElectionKind)) { }
-
-    public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object value)
-    {
-        if (value is string kind)
-        {
-            return kind switch
-            {
-                "PASO" => ElectionKind.Primary,
-                "GENERAL" => ElectionKind.General,
-                "BALOTAJE" => ElectionKind.Ballotage,
-                _ => base.ConvertFrom(context, culture, value)
-            };
-        }
-
-        return base.ConvertFrom(context, culture, value);
-    }
-
-    public override object? ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
-    {
-        if (value is ElectionKind kind && destinationType == typeof(string))
-            return kind.ToUserString();
-
-        return base.ConvertTo(context, culture, value, destinationType);
-    }
+    public const string Positive = "POSITIVO";
+    public const string Blank = "EN BLANCO";
+    public const string Null = "NULO";
+    public const string Appealed = "RECURRIDO";
+    public const string Contested = "IMPUGNADO";
+    public const string Command = "COMANDO";
 }
 
-[TypeConverter(typeof(BallotKindConverter))]
-public enum BallotKind : byte
+public record District(int Id, string Name)
 {
-    [Description("POSITIVO")]
-    Positive,
-    [Description("EN BLANCO")]
-    Blank,
-    [Description("NULO")]
-    Null,
-    [Description("RECURRIDO")]
-    /// <summary>
-    /// Recurrido
-    /// </summary>
-    Appealed,
-    [Description("IMPUGNADO")]
-    /// <summary>
-    /// Impugnado
-    /// </summary>
-    Contested,
-    [Description("COMANDO")]
-    /// <summary>
-    /// Commando
-    /// </summary>
-    Command
-}
+    IndexedCollection<int, Section>? sections;
 
-public class BallotKindConverter : EnumConverter
-{
-    public BallotKindConverter() : base(typeof(BallotKind)) { }
-
-    public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object value)
+    public IList<Section> Sections
     {
-        if (value is string kind)
-        {
-            return kind switch
-            {
-                "POSITIVO" => BallotKind.Positive,
-                "EN BLANCO" => BallotKind.Blank,
-                "NULO" => BallotKind.Null,
-                "RECURRIDO" => BallotKind.Appealed,
-                "IMPUGNADO" => BallotKind.Contested,
-                "COMANDO" => BallotKind.Command,
-                _ => base.ConvertFrom(context, culture, value)
-            };
-        }
-
-        return base.ConvertFrom(context, culture, value);
+        get => sections ??= new(x => x.Id, x => x.District = this);
+        set => (sections ??= new(x => x.Id, x => x.District = this)).AddRange(value);
     }
-
-    public override object? ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
-    {
-        if (value is BallotKind kind && destinationType == typeof(string))
-            return kind.ToUserString();
-
-        return base.ConvertTo(context, culture, value, destinationType);
-    }
-}
-
-public record District
-{
-    Dictionary<int, Provincial> index = new();
-    ObservableCollection<Provincial> values = new();
-
-    public District(int id, string name)
-    {
-        (Id, Name) = (id, name);
-        values.CollectionChanged += (s, e) =>
-        {
-            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
-            {
-                foreach (Provincial item in e.NewItems)
-                {
-                    item.District = this;
-                    index.Add(item.Id, item);
-                }
-            }
-        };
-    }
-
-    public int Id { get; init; }
-    public string Name { get; init; }
-    public IList<Provincial> Provincials => values;
-
-    public Provincial GetOrAddProvincial(int id, string name)
-    {
-        if (index.TryGetValue(id, out var provincial))
-            return provincial;
-
-        provincial = new Provincial(id, name);
-        values.Add(provincial);
-        return provincial;
-    }
-}
-
-public class Provincial
-{
-    Dictionary<int, Section> index = new();
-    ObservableCollection<Section> values = new();
-
-    public Provincial(int id, string name)
-    {
-        (Id, Name) = (id, name);
-        values.CollectionChanged += (s, e) =>
-        {
-            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
-            {
-                foreach (Section item in e.NewItems)
-                {
-                    item.Provincial = this;
-                    index.Add(item.Id, item);
-                }
-            }
-        };
-    }
-
-    public int Id { get; }
-    public string Name { get; }
-    public District? District { get; set; }
-    public IList<Section> Sections => values;
 
     public Section GetOrAddSection(int id, string name)
     {
-        if (index.TryGetValue(id, out var section))
+        sections ??= new(x => x.Id, x => x.District = this);
+        if (sections.TryGetValue(id, out var section))
             return section;
 
         section = new Section(id, name);
-        values.Add(section);
+        sections.Add(section);
         return section;
     }
 }
 
-public class Section
+public record Section(int Id, string Name)
 {
-    Dictionary<string, Circuit> index = new();
-    ObservableCollection<Circuit> values = new();
+    IndexedCollection<string, Circuit>? circuits;
 
-    public Section(int id, string name)
+    [JsonIgnore, Newtonsoft.Json.JsonIgnore]
+    public District? District { get; set; }
+    public Stats? Stats { get; set; }
+
+    public IList<Circuit> Circuits
     {
-        (Id, Name) = (id, name);
-        values.CollectionChanged += (s, e) =>
-        {
-            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
-            {
-                foreach (Circuit item in e.NewItems)
-                {
-                    item.Section = this;
-                    index.Add(item.Id, item);
-                }
-            }
-        };
+        get => circuits ??= new(x => x.Id, x => x.Section = this);
+        set => (circuits ??= new(x => x.Id, x => x.Section = this)).AddRange(value);
     }
-
-    public int Id { get; }
-    public string Name { get; }
-    public Provincial? Provincial { get; set; }
-    public IList<Circuit> Circuits => values;
 
     public Circuit GetOrAddCircuit(string id, string? name)
     {
-        if (index.TryGetValue(id, out var circuit))
+        circuits ??= new(x => x.Id, x => x.Section = this);
+        if (circuits.TryGetValue(id, out var circuit))
             return circuit;
 
         circuit = new Circuit(id, name);
-        values.Add(circuit);
+        circuits.Add(circuit);
         return circuit;
     }
 }
 
-public class Circuit
+public record Circuit(string Id, string? Name)
 {
-    Dictionary<int, Station> index = new();
-    ObservableCollection<Station> values = new();
+    IndexedCollection<int, Station>? stations;
 
-    public Circuit(string id, string? name)
-    {
-        (Id, Name) = (id, name);
-        values.CollectionChanged += (s, e) =>
-        {
-            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
-            {
-                foreach (Station item in e.NewItems)
-                {
-                    item.Circuit = this;
-                    index.Add(item.Id, item);
-                }
-            }
-        };
-    }
-
-    public string Id { get; }
-    public string? Name { get; }
+    [JsonIgnore, Newtonsoft.Json.JsonIgnore]
     public Section? Section { get; set; }
-    public IList<Station> Stations => values;
+    public Stats? Stats { get; set; }
+
+    public IList<Station> Stations
+    {
+        get => stations ??= new(x => x.Id, x => x.Circuit = this);
+        set => (stations ??= new(x => x.Id, x => x.Circuit = this)).AddRange(value);
+    }
 
     public Station GetOrAddStation(int id, int electors)
     {
-        if (index.TryGetValue(id, out var station))
+        stations ??= new(x => x.Id, x => x.Circuit = this);
+        if (stations.TryGetValue(id, out var station))
             return station;
 
         station = new Station(id, electors);
-        values.Add(station);
+        stations.Add(station);
         return station;
     }
 }
 
-public record Party
+public record Party(string Name)
 {
-    Dictionary<int, PartyList> index = new();
-    ObservableCollection<PartyList>? values;
+    public HashSet<string> Lists { get; } = new();
 
-    public Party(int id, string name)
+    public string? AddList(string? list)
     {
-        (Id, Name) = (id, name);
-    }
-
-    public int Id { get; }
-    public string Name { get; }
-
-    public ICollection<PartyList>? Lists => values;
-
-    public PartyList? GetOrAddList(int? id, string? name)
-    {
-        if (id is null || name is null)
+        if (list is null)
             return null;
 
-        if (index.TryGetValue(id.Value, out var list))
-            return list;
-
-        list = new PartyList(id.Value, name);
-
-        if (values is null)
-        {
-            values = new ObservableCollection<PartyList>();
-            values.CollectionChanged += (s, e) =>
-            {
-                if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
-                {
-                    foreach (PartyList item in e.NewItems)
-                        index.Add(item.Id, item);
-                }
-            };
-        }
-
-        values.Add(list);
+        Lists.Add(list);
         return list;
     }
 }
 
-public record PartyList(int Id, string Name);
-
 public record Position(int Id, string Name);
 
-public class Station
+public class Station(int id, int electors)
 {
-    public Station(int id, int electors)
+    ActionCollection<Ballot>? ballots;
+
+    public int Id => id;
+    public int Electors => electors;
+    /// <summary>
+    /// Station code
+    /// </summary>
+    /// <remarks>
+    /// Example: 0100100001X
+    /// 01: District
+    /// 001: Section
+    /// 00001: Station
+    /// X: fixed suffix
+    /// </remarks>
+    public string? Code
     {
-        (Id, Electors) = (id, electors);
+        get
+        {
+            if (Circuit is null)
+                return null;
+            if (Circuit.Section is null)
+                return null;
+            if (Circuit.Section.District is null)
+                return null;
+
+            return $"{Circuit.Section.District.Id:D2}{Circuit.Section.Id:D3}{Circuit.Id:D5}X";
+        }
     }
 
-    public int Id { get; }
-    public int Electors { get; }
-    public Circuit? Circuit { get; set; }
-    public List<Ballot> Ballots { get; init; } = new();
+    public string? Url { get; }
 
-    public Ballot GetOrAddBallot(BallotKind kind, int count, int position, int? party, int? list)
+    [JsonIgnore, Newtonsoft.Json.JsonIgnore]
+    public Circuit? Circuit { get; set; }
+
+    public IList<Ballot> Ballots
+    {
+        get => ballots ??= new(x => x.Station = this);
+        set => (ballots ??= new(x => x.Station = this)).AddRange(value);
+    }
+    
+    public double Participation => Ballots.Sum(x => x.Count) / (double)Electors;
+
+    public Ballot GetOrAddBallot(string kind, int count, string position, string? party, string? list)
     {
         if (Ballots.FirstOrDefault(b => b.Position == position && b.Party == party && b.List == list && b.Kind == kind) is { } ballot)
         {
             ballot = ballot with { Count = count };
             return ballot;
         }
-
+        
         if (kind == BallotKind.Positive && party == null)
             throw new ArgumentException("Voto positivo sin partido.");
 
-        ballot = new Ballot(this, kind, count, position, party, list);
-        Ballots.Add(ballot);
+        ballot = new Ballot(kind, count, position, party, list);
+        Debug.Assert(ballots != null);
+        ballots.Add(ballot);
         return ballot;
     }
 }
 
-public record Ballot(
-    [property: JsonIgnore, Newtonsoft.Json.JsonIgnore]
-    Station Station,
-    BallotKind Kind,
-    int Count,
-    int Position,
-    int? Party, int? List);
+public record Ballot(string Kind, int Count, string Position, string? Party, string? List)
+{
+    [JsonIgnore, Newtonsoft.Json.JsonIgnore]
+    public Station? Station { get; set; }
+}
+
+class ActionCollection<T> : ObservableCollection<T>
+{
+    public ActionCollection(Action<T> action)
+    {
+        CollectionChanged += (s, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (T item in e.NewItems)
+                    if (item is not null)
+                        action.Invoke(item);
+            }
+        };
+    }
+}
+
+class IndexedCollection<TKey, TValue> : ObservableCollection<TValue>, IDictionary<TKey, TValue> where TKey : notnull
+{
+    readonly Dictionary<TKey, TValue> index = new();
+
+    public IndexedCollection(Func<TValue, TKey> key, Action<TValue>? add = default)
+    {
+        CollectionChanged += (s, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (TValue item in e.NewItems)
+                    if (item is not null)
+                        if (index.TryAdd(key(item), item))
+                            add?.Invoke(item);
+            }
+        };
+    }
+
+    public TValue this[TKey key] { get => ((IDictionary<TKey, TValue>)index)[key]; set => ((IDictionary<TKey, TValue>)index)[key] = value; }
+
+    public ICollection<TKey> Keys => ((IDictionary<TKey, TValue>)index).Keys;
+
+    public ICollection<TValue> Values => ((IDictionary<TKey, TValue>)index).Values;
+
+    public bool IsReadOnly => ((ICollection<KeyValuePair<TKey, TValue>>)index).IsReadOnly;
+
+    public void Add(TKey key, TValue value)
+    {
+        ((IDictionary<TKey, TValue>)index).Add(key, value);
+    }
+
+    public void Add(KeyValuePair<TKey, TValue> item)
+    {
+        ((ICollection<KeyValuePair<TKey, TValue>>)index).Add(item);
+    }
+
+    public bool Contains(KeyValuePair<TKey, TValue> item)
+    {
+        return ((ICollection<KeyValuePair<TKey, TValue>>)index).Contains(item);
+    }
+
+    public bool ContainsKey(TKey key)
+    {
+        return ((IDictionary<TKey, TValue>)index).ContainsKey(key);
+    }
+
+    public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
+    {
+        ((ICollection<KeyValuePair<TKey, TValue>>)index).CopyTo(array, arrayIndex);
+    }
+
+    public bool Remove(TKey key)
+    {
+        return ((IDictionary<TKey, TValue>)index).Remove(key);
+    }
+
+    public bool Remove(KeyValuePair<TKey, TValue> item)
+    {
+        return ((ICollection<KeyValuePair<TKey, TValue>>)index).Remove(item);
+    }
+
+    public bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value)
+    {
+        return ((IDictionary<TKey, TValue>)index).TryGetValue(key, out value);
+    }
+
+    IEnumerator<KeyValuePair<TKey, TValue>> IEnumerable<KeyValuePair<TKey, TValue>>.GetEnumerator()
+    {
+        return ((IEnumerable<KeyValuePair<TKey, TValue>>)index).GetEnumerator();
+    }
+}

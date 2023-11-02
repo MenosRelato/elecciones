@@ -49,7 +49,7 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
             .Where(x => Path.GetExtension(x) != ".csv")
             .Sum(x => new FileInfo(x).Length);
 
-        var skipped = 0l;
+        var skipped = 0L;
         var electionDir = settings.BaseDir;
         var relativeDir = electionDir.Substring(Constants.DefaultCacheDir.Length + 1).Replace('\\', '/');
 
@@ -68,18 +68,18 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
             var task = ctx.AddTask($"Subiendo {relativeDir} {size.Bytes()}", new ProgressTaskSettings { MaxValue = size });
             var progress = new DirectoryTransferContext
             {
-                ShouldTransferCallbackAsync = async (sourcePath, destinationPath) =>
+                ShouldTransferCallbackAsync = (sourcePath, destinationPath) =>
                 {
                     if (destinationPath is not ICloudBlob blob ||
                         sourcePath is not string sourceFile)
-                        return false;
+                        return Task.FromResult(false);
 
                     // Never transfer the raw unprocessed csv files from the dataset
                     if (Path.GetExtension(sourceFile) == ".csv")
-                        return false;
+                        return Task.FromResult(false);
 
                     // Let the overwrite callback do the hashing check
-                    return true;
+                    return Task.FromResult(true);
                 },
                 ShouldOverwriteCallbackAsync = async (sourcePath, destinationPath) =>
                 {

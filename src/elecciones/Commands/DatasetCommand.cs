@@ -82,7 +82,7 @@ internal class DatasetCommand(IHttpClientFactory factory) : AsyncCommand<Electio
         }
         else
         {
-            MarkupLine($"[green]✓[/] El dataset de elecciones {settings.Election.ToUserString().ToLowerInvariant()} {settings.Year} esta actualizado.");
+            MarkupLine($"[green]✓[/] El dataset de elecciones {settings.Election.ToLowerInvariant()} {settings.Year} esta actualizado.");
         }
 
         return 0;

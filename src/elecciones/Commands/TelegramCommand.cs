@@ -9,6 +9,7 @@ using Newtonsoft.Json.Linq;
 using NuGet.Common;
 using Polly;
 using Polly.Retry;
+using Spectre.Console;
 using Spectre.Console.Cli;
 using static MenosRelato.Results;
 using static Spectre.Console.AnsiConsole;
@@ -39,7 +40,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         [CommandOption("-z|--zip")]
         [Description("Comprimir JSON de metadata con GZip")]
         [DefaultValue(true)]
-        public bool Zip { get; set; }
+        public bool Zip { get; set; } = true;
     }
 
     record District(string? Name)
@@ -70,10 +71,9 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
-        var chrome = await browser;
-
         if (!settings.DownloadOnly)
         {
+            var chrome = await browser;
             var districts = 0;
             await Status().StartAsync("Contando distritos electorales", async ctx =>
             {
@@ -109,9 +109,18 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             });
         }
 
-        await Status().StartAsync("Descargando telegramas", async ctx =>
+        await Progress()
+            .HideCompleted(true)
+            .Columns(
+            [
+                new TaskDescriptionColumn { Alignment = Justify.Left },
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new RemainingTimeColumn(),
+                new SpinnerColumn(),
+            ])
+            .StartAsync(async ctx =>
         {
-            var progress = new Progress<string>(status => ctx.Status = status);
             var path = Path.Combine(settings.BaseDir, "telegrama");
             var districts = new[] { "*.json", "*.json.gz" }
                 .SelectMany(ext => Directory.EnumerateFiles(path, ext))
@@ -122,12 +131,36 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 var json = x.EndsWith(".gz") ? await GzipFile.ReadAllTextAsync(x) : await File.ReadAllTextAsync(x);
                 var district = Newtonsoft.Json.JsonConvert.DeserializeObject<District>(json);
                 Debug.Assert(district != null);
-                var prepare = new DownloadTelegram(district, settings, resilience, httpFactory, progress);
+                var prepare = new DownloadTelegram(district, settings, resilience, httpFactory, ctx);
                 await prepare.ExecuteAsync();
             });
         });
 
-        return 0;
+        var file = Path.Combine(settings.BaseDir, "election.json");
+        if (settings.Zip)
+            file += ".gz";
+
+        var election = await ModelSerializer.DeserializeAsync(Path.Combine(settings.BaseDir, file));
+        Debug.Assert(election != null);
+
+        double notelegram = election.Districts
+            .SelectMany(d => d.Sections
+            .SelectMany(s => s.Circuits
+            .SelectMany(c => c.Stations)))
+            .Where(s => !File.Exists(Path.Combine(
+                settings.BaseDir, "telegrama",
+                s.Circuit!.Section!.District!.Id.ToString(),
+                s.Circuit!.Section!.Id.ToString(),
+                s.Code + ".tiff")))
+            .LongCount();
+
+        double total = election.Districts
+            .SelectMany(d => d.Sections
+            .SelectMany(s => s.Circuits
+            .SelectMany(c => c.Stations)))
+            .LongCount();
+
+        return Result(0, $"Completado. {(notelegram / total):P} sin telegrama.");
     }
 
     static async Task SaveAsync<T>(T value, string fileName, bool zip)
@@ -154,84 +187,110 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         }
     }
 
-    class DownloadTelegram(District district, Settings settings, ResiliencePipeline resilience, IHttpClientFactory httpFactory, IProgress<string> progress)
+    class DownloadTelegram(District district, Settings settings, ResiliencePipeline resilience, IHttpClientFactory httpFactory, ProgressContext progress)
     {
         public async Task ExecuteAsync()
         {
             using var http = httpFactory.CreateClient();
             http.BaseAddress = new Uri("https://resultados.gob.ar");
 
-            double total = district.Sections.SelectMany(s => s.Circuits).SelectMany(i => i.Institutions).SelectMany(s => s.Stations).Count();
-            double current = 0;
-
-            foreach (var circuit in district.Sections.SelectMany(s => s.Circuits))
+            foreach (var section in district.Sections)
             {
-                foreach (var station in circuit.Institutions.SelectMany(i => i.Stations))
+                string? sectionName = default;
+                var districtId = 0;
+                var sectionId = 0;
+
+                double total = section.Circuits.SelectMany(c => c.Institutions).SelectMany(s => s.Stations).Count();
+                var task = progress.AddTask($"{district.Name} - {section.Name}".PadRight(30), new ProgressTaskSettings { MaxValue = total });
+
+                foreach (var circuit in section.Circuits)
                 {
-                    current++;
-                    progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code})");
-
-                    var districtId = int.Parse(station.Code[..2]);
-                    var sectionId = int.Parse(station.Code[2..5]);
-                    var circuitId = circuit.Name;
-                    Debug.Assert(circuitId != null);
-
-                    var path = Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString(), circuitId);
-                    Directory.CreateDirectory(path);
-
-                    if (File.Exists(Path.Combine(path, station.Code + ".tiff")))
+                    foreach (var station in circuit.Institutions.SelectMany(i => i.Stations))
                     {
-                        progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code}[green]✓[/])");
-                        continue;
+                        task.Increment(1d);
+                        //current++;
+                        //progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code})");
+
+                        districtId = int.Parse(station.Code[..2]);
+                        sectionId = int.Parse(station.Code[2..5]);
+
+                        // The circuit is not part of the telegram, and we verified across the whole set that there are no 
+                        // duplicate station codes within a section.
+                        var path = Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString());
+                        Directory.CreateDirectory(path);
+
+                        if (File.Exists(Path.Combine(path, station.Code + ".tiff")))
+                        {
+                            // Merge older scope.json with main json from a previous run.
+                            var scopeFile = Path.Combine(path, station.Code + ".scope.json.gz");
+                            var metaFile = Path.Combine(path, station.Code + ".json.gz");
+                            if (File.Exists(scopeFile) && File.Exists(metaFile))
+                            {
+                                var meta = JObject.Parse(await GzipFile.ReadAllTextAsync(metaFile));
+                                var scope = JObject.Parse(await GzipFile.ReadAllTextAsync(scopeFile));
+                                meta.Add("datos", scope);
+                                await GzipFile.WriteAllTextAsync(metaFile, meta.ToString());
+                                File.Delete(scopeFile);
+                            }
+
+                            //progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code}[green]✓[/])");
+                            continue;
+                        }
+
+                        //progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code})");
+
+                        dynamic? tdata = await resilience.ExecuteAsync(async _ =>
+                        {
+                            var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + station.Code);
+                            if (string.IsNullOrEmpty(tiff))
+                                return null;
+
+                            return JObject.Parse(tiff);
+                        });
+
+                        var sdata = await resilience.ExecuteAsync(async _ =>
+                        {
+                            var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + station.Code + "/1");
+                            Debug.Assert(!string.IsNullOrEmpty(scope));
+                            // NOTE: if the site is temporarily down (it has happened), it will return 
+                            // error html instead of json, so we let that go through the retry pipeline.
+                            return JObject.Parse(scope);
+                        });
+
+                        if (settings.Zip)
+                            await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json.gz"), sdata.ToString());
+                        else
+                            await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json"), sdata.ToString());
+
+                        var location = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Select(x => x.ToString()));
+                        sectionName = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Take(2).Select(x => x.ToString()));
+
+                        if (tdata is null)
+                        {
+                            // progress.Report($"[red]x[/] No hay telegrama {location} - {station.Code}");
+                            continue;
+                        }
+
+                        var img = Convert.FromBase64String((string)tdata.encodingBinary);
+                        var file = (string)tdata.fileName;
+                        await File.WriteAllBytesAsync(Path.Combine(path, file), img);
+
+                        // Before saving the telegrama, we remove the binary data.
+                        ((JObject)tdata).Remove("encodingBinary");
+
+                        if (settings.Zip)
+                            await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json.gz"), tdata.ToString());
+                        else
+                            await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), tdata.ToString());
                     }
-
-                    progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code})");
-
-                    dynamic? tdata = await resilience.ExecuteAsync(async _ =>
-                    {
-                        var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + station.Code);
-                        if (string.IsNullOrEmpty(tiff))
-                            return null;
-
-                        return JObject.Parse(tiff);
-                    });
-
-                    var sdata = await resilience.ExecuteAsync(async _ =>
-                    {
-                        var scope = await http.GetStringAsync("/backend-difu/scope/data/getScopeData/" + station.Code + "/1");
-                        Debug.Assert(!string.IsNullOrEmpty(scope));
-                        // NOTE: if the site is temporarily down (it has happened), it will return 
-                        // error html instead of json, so we let that go through the retry pipeline.
-                        return JObject.Parse(scope);
-                    });
-
-                    if (settings.Zip)
-                        await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json.gz"), sdata.ToString());
-                    else
-                        await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json"), sdata.ToString());
-
-                    var location = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Select(x => x.ToString()));
-
-                    if (tdata is null)
-                    {
-                        progress.Report($"[red]x[/] No hay telegrama {location} - {station.Code}");
-                        continue;
-                    }
-
-                    var img = Convert.FromBase64String((string)tdata.encodingBinary);
-                    var file = (string)tdata.fileName;
-                    await File.WriteAllBytesAsync(Path.Combine(path, file), img);
-
-                    // Before saving the telegrama, we remove the binary data.
-                    ((JObject)tdata).Remove("encodingBinary");
-
-                    if (settings.Zip)
-                        await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json.gz"), tdata.ToString());
-                    else
-                        await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), tdata.ToString());
-
-                    //progress.Report($"Descargado telegrama {location} - {station.Code}");
                 }
+
+                double stations = section.Circuits.SelectMany(c => c.Institutions.SelectMany(i => i.Stations)).Count();
+                double missing = section.Circuits.SelectMany(c => c.Institutions.SelectMany(i => i.Stations)).Count(x =>
+                    !File.Exists(Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString(), x.Code + ".tiff")));
+
+                if (sectionName is not null)
+                    Result(0, $"{sectionName} {(missing / stations):P} sin telegrama");
             }
         }
     }

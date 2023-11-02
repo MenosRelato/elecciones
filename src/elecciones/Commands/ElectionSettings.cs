@@ -10,7 +10,7 @@ public class ElectionSettings : CommandSettings
     [CommandOption("-e|--election")]
     [Description("Tipo de eleccion a cargar")]
     [DefaultValue(ElectionKind.General)]
-    public ElectionKind Election { get; set; } = ElectionKind.General;
+    public string Election { get; set; } = ElectionKind.General;
 
     [CommandOption("-y|--year")]
     [Description("Año de la eleccion a cargar")]
@@ -21,5 +21,5 @@ public class ElectionSettings : CommandSettings
     [Description("Utilizar un proxy para HTTP")]
     public string? Proxy { get; set; }
 
-    public string BaseDir => Path.Combine(Constants.DefaultCacheDir, Year.ToString(), Election.ToUserString().ToLowerInvariant());
+    public string BaseDir => Path.Combine(Constants.DefaultCacheDir, Year.ToString(), Election.ToLowerInvariant());
 }
