@@ -50,6 +50,7 @@ public class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Setti
         [property: JsonPropertyName("circuito_id")] string CircuitId,
         [property: JsonPropertyName("circuito_nombre")] string? CircuitName,
         [property: JsonPropertyName("mesa_id")] int Station,
+        [property: JsonPropertyName("mesa_tipo")] string StationType,
         [property: JsonPropertyName("mesa_electores")] int Electors,
         [property: JsonPropertyName("cargo_id")] int PositionId,
         [property: JsonPropertyName("cargo_nombre")] string PositionName,
@@ -157,6 +158,11 @@ public class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Setti
                     var values = CsvSerializer.LineParser.Parse(line);
                     var value = CsvSerializer.Deserialize<BallotCsv>(header, line);
                     Debug.Assert(value != null);
+
+                    // International voters don't elect president/vice-president, so skip them
+                    // The gob site also doesn't list them in the UI
+                    if (value.StationType == "EXTRANJEROS")
+                        continue;
 
                     // Always add the polling station, even if there may be no votes
                     var station = election
