@@ -35,9 +35,14 @@ public static class ModelSerializer
     {
         using var stream = File.Create(path);
         if (Path.GetExtension(path) == ".gz")
-            await SerializeAsync(election, stream);
+        {
+            using var zip = new GZipStream(stream, CompressionLevel.SmallestSize);
+            await SerializeAsync(election, zip);
+        }
         else
+        {
             await SerializeAsync(election, stream);
+        }
     }
 
     static async Task SerializeAsync(Election election, Stream stream) => await JsonSerializer.SerializeAsync(stream, election, new JsonSerializerOptions

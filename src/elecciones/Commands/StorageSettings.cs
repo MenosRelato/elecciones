@@ -27,7 +27,7 @@ public class StorageSettings(IConfiguration configuration) : ElectionSettings
         if (storage is not null)
             Storage = storage;
         else
-            Storage = Constants.AzureStorage;
+            Storage = Constants.AzureStorageConnection;
 
         StorageValues = Storage.Split(';')
             .Select(x => x.Split('='))

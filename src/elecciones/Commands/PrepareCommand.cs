@@ -153,12 +153,17 @@ public class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Setti
                     }
 
                     task.Increment(1);
-                    //var remaining = TimeSpan.FromTicks(watch.Elapsed.Ticks * (total - count) / count);
-                    //ctx.Status = $"Cargando votos {count:N0} de {total:N0} (faltan {remaining.Humanize(culture: es)})";
 
                     var values = CsvSerializer.LineParser.Parse(line);
                     var value = CsvSerializer.Deserialize<BallotCsv>(header, line);
                     Debug.Assert(value != null);
+
+                    // Always add the polling station, even if there may be no votes
+                    var station = election
+                        .GetOrAddDistrict(value.DistrictId, value.DistrictName)
+                        .GetOrAddSection(value.SectionId, value.SectionName)
+                        .GetOrAddCircuit(value.CircuitId, value.CircuitName)
+                        .GetOrAddStation(value.Station, value.Electors);
 
                     // Don't waste persistence with default value counts
                     if (value.Count == 0)
@@ -187,15 +192,10 @@ public class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Setti
                     var party = election.GetOrAddParty(value.PartyName);
                     var list = party?.AddList(value.ListName);
 
-                    election
-                        .GetOrAddDistrict(value.DistrictId, value.DistrictName)
-                        .GetOrAddSection(value.SectionId, value.SectionName)
-                        .GetOrAddCircuit(value.CircuitId, value.CircuitName)
-                        .GetOrAddStation(value.Station, value.Electors)
-                        .GetOrAddBallot(
-                            ballotKind, value.Count,
-                            election.GetOrAddPosition(value.PositionId, value.PositionName).Name,
-                            party?.Name, list);
+                    station.GetOrAddBallot(
+                        ballotKind, value.Count,
+                        election.GetOrAddPosition(value.PositionId, value.PositionName).Name,
+                        party?.Name, list);
 
                     votes++;
                     if (votes == settings.Count)
@@ -218,20 +218,7 @@ public class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Setti
                 }
             });
 
-        var fileName = "election";
-
-        using var stream = File.Create(Path.Combine(settings.BaseDir, fileName + ".json.gz"));
-        using var zip = new GZipStream(stream, CompressionLevel.SmallestSize);
-        // For the GZip version, which we'll use to read and process, we want to preserve references 
-        // to make it as small as possible.
-        await JsonSerializer.SerializeAsync(zip, election, new JsonSerializerOptions
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
-            ReferenceHandler = ReferenceHandler.IgnoreCycles,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            // We're zipping anyway, indenting won't take much extra
-            WriteIndented = true,
-        });
+        await ModelSerializer.SerializeAsync(election, Path.Combine(settings.BaseDir, "election.json.gz"));
 
         return Result(0, "Done");
     }

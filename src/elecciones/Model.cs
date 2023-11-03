@@ -24,16 +24,18 @@ public static class ElectionExtensions
 }
 
 /// <summary>
-/// Useful statistics by party id and stats type.
+/// Useful statistics by party and stats type.
 /// </summary>
 public class Stats
 {
     /// <summary>
-    /// This is the sum of all values divided by the number of values. It gives a measure of the central location of the data.
+    /// This is the sum of all values divided by the number of values. 
+    /// It gives a measure of the central location of the data.
     /// </summary>
     public Dictionary<string, double> Mean { get; init; } = new();
     /// <summary>
-    /// This is the middle value in a sorted list of values. It divides the data into two halves and is less affected by outliers than the mean.
+    /// This is the middle value in a sorted list of values. 
+    /// It divides the data into two halves and is less affected by outliers than the mean.
     /// </summary>
     public Dictionary<string, double> Median { get; init; } = new();
     /// <summary>
@@ -45,11 +47,14 @@ public class Stats
     /// </summary>
     public Dictionary<string, double> UpperQuartile { get; init; } = new();
     /// <summary>
-    /// The IQR is the range between the first quartile (25th percentile) and the third quartile (75th percentile), and is used to measure statistical dispersion.
+    /// The IQR is the range between the first quartile (25th percentile) and the 
+    /// third quartile (75th percentile), and is used to measure statistical dispersion.
     /// </summary>
     public Dictionary<string, double> InterquartileRange { get; init; } = new();
     /// <summary>
-    /// This measures the amount of variation or dispersion in the set of values. A low standard deviation indicates that values are close to the mean, while a high standard deviation indicates that the values are spread out over a wider range.
+    /// This measures the amount of variation or dispersion in the set of values. 
+    /// A low standard deviation indicates that values are close to the mean, while 
+    /// a high standard deviation indicates that the values are spread out over a wider range.
     /// </summary>
     public Dictionary<string, double> StandardDeviation { get; init; } = new();
     /// <summary>
@@ -62,15 +67,10 @@ public record Election(int Year, string Kind)
 {
     readonly IndexedCollection<string, Party> parties = new(x => x.Name);
     readonly IndexedCollection<int, Position> positions = new(x => x.Id);
-    readonly IndexedCollection<int, District> districts = new(x => x.Id);
+    IndexedCollection<int, District>? districts;
 
-    // Serialized just for reference.
-    //public Dictionary<byte, string> Ballots { get; } = typeof(BallotKind)
-    //    .GetMembers(BindingFlags.Public | BindingFlags.Static)
-    //    .OfType<FieldInfo>()
-    //    .Where(x => x.Attributes.HasFlag(FieldAttributes.Literal))
-    //    .Select(x => new { x.GetCustomAttribute<DescriptionAttribute>()!.Description, Value = (byte)x.GetValue(null)! })
-    //    .ToDictionary(x => x.Value, x => x.Description);
+    public string BaseUrl => "https://resultados.gob.ar";
+    public string StorageUrl => Constants.AzureStorageUrl + "elecciones";
 
     [JsonIgnore, Newtonsoft.Json.JsonIgnore]
     public IList<Party> Parties => parties;
@@ -79,8 +79,8 @@ public record Election(int Year, string Kind)
 
     public IList<District> Districts
     {
-        get => districts;
-        set => districts.AddRange(value);
+        get => districts ??= new(x => x.Id, x => x.Election = this);
+        set => Districts.AddRange(value);
     }
     
     public Stats? Stats { get; set; }
@@ -110,6 +110,7 @@ public record Election(int Year, string Kind)
 
     public District GetOrAddDistrict(int id, string name)
     {
+        districts ??= new(x => x.Id, x => x.Election = this);
         if (districts.TryGetValue(id, out var district))
             return district;
 
@@ -139,6 +140,9 @@ public static class BallotKind
 public record District(int Id, string Name)
 {
     IndexedCollection<int, Section>? sections;
+
+    [JsonIgnore, Newtonsoft.Json.JsonIgnore]
+    public Election? Election { get; set; }
 
     public IList<Section> Sections
     {
@@ -226,12 +230,20 @@ public record Party(string Name)
 
 public record Position(int Id, string Name);
 
-public class Station(int id, int electors)
+public record Station
 {
+    Lazy<bool> hasTelegram;
     ActionCollection<Ballot>? ballots;
 
-    public int Id => id;
-    public int Electors => electors;
+    public Station(int id, int electors)
+    {
+        (Id, Electors) = (id, electors);
+        hasTelegram = new(() => File.Exists(TelegramFile));
+    }
+
+    public int Id { get; }
+    public int Electors { get; }
+
     /// <summary>
     /// Station code
     /// </summary>
@@ -242,22 +254,26 @@ public class Station(int id, int electors)
     /// 00001: Station
     /// X: fixed suffix
     /// </remarks>
-    public string? Code
-    {
-        get
-        {
-            if (Circuit is null)
-                return null;
-            if (Circuit.Section is null)
-                return null;
-            if (Circuit.Section.District is null)
-                return null;
+    public string? Code => 
+        Circuit?.Section?.District is null ? null : 
+        $"{Circuit!.Section!.District!.Id:D2}{Circuit!.Section!.Id:D3}{Id:D5}X";
 
-            return $"{Circuit.Section.District.Id:D2}{Circuit.Section.Id:D3}{Circuit.Id:D5}X";
-        }
-    }
+    public bool? HasTelegram => hasTelegram.Value;
 
-    public string? Url { get; }
+    [JsonIgnore, Newtonsoft.Json.JsonIgnore]
+    public string? TelegramFile =>
+        Circuit?.Section?.District?.Election is null ? null :
+        Path.Combine(
+            Constants.DefaultCacheDir,
+            Circuit!.Section!.District!.Election.Year.ToString(),
+            Circuit!.Section!.District!.Election.Kind.ToLowerInvariant(),
+            "telegrama",
+            Circuit!.Section!.District!.Id.ToString(),
+            Circuit!.Section!.Id.ToString(),
+            $"{Code}.tiff");
+
+    public string? WebUrl { get; set; }
+    public string? TelegramUrl { get; set; }
 
     [JsonIgnore, Newtonsoft.Json.JsonIgnore]
     public Circuit? Circuit { get; set; }

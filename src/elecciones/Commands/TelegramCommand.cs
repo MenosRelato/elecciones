@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using System.Data;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
@@ -11,6 +12,8 @@ using Polly;
 using Polly.Retry;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using static System.Collections.Specialized.BitVector32;
+using static System.Formats.Asn1.AsnWriter;
 using static MenosRelato.Results;
 using static Spectre.Console.AnsiConsole;
 
@@ -60,14 +63,6 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         public List<Station> Stations { get; } = new();
     }
     record Station(string Code, string Url);
-
-    static readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
-        ReferenceHandler = ReferenceHandler.IgnoreCycles,
-        WriteIndented = true,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
@@ -126,6 +121,13 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 .SelectMany(ext => Directory.EnumerateFiles(path, ext))
                 .Skip(settings.Skip).Take(settings.Take);
 
+            var file = Path.Combine(settings.BaseDir, "election.json");
+            if (settings.Zip)
+                file += ".gz";
+
+            var election = await ModelSerializer.DeserializeAsync(Path.Combine(settings.BaseDir, file));
+            Debug.Assert(election != null);
+
             await Parallel.ForEachAsync(districts, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (x, c) =>
             {
                 var json = x.EndsWith(".gz") ? await GzipFile.ReadAllTextAsync(x) : await File.ReadAllTextAsync(x);
@@ -133,7 +135,47 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 Debug.Assert(district != null);
                 var prepare = new DownloadTelegram(district, settings, resilience, httpFactory, ctx);
                 await prepare.ExecuteAsync();
+
+                MenosRelato.District? dm = default;
+
+                foreach (var section in district.Sections)
+                {
+                    double total = section.Circuits.SelectMany(c => c.Institutions).SelectMany(s => s.Stations).Count();
+                    var task = ctx.AddTask($"Actualizando {district.Name} - {section.Name}".PadRight(30), new ProgressTaskSettings { MaxValue = total });
+
+                    MenosRelato.Section? sm = default;
+
+                    foreach (var station in section.Circuits.SelectMany(c => c.Institutions).SelectMany(i => i.Stations))
+                    {
+                        task.Increment(1d);
+                        if (dm is null)
+                        {
+                            var districtId = int.Parse(station.Code[..2]);
+                            dm = election.Districts.FirstOrDefault(d => d.Id == districtId);
+                            Debug.Assert(dm != null);
+                        }
+                        if (sm is null)
+                        {
+                            var sectionId = int.Parse(station.Code[2..5]);
+                            sm = dm.Sections.FirstOrDefault(s => s.Id == sectionId);
+                            Debug.Assert(sm != null);
+                        }
+
+                        var stm = sm.Circuits.SelectMany(x => x.Stations).FirstOrDefault(s => s.Code == station.Code);
+                        Debug.Assert(stm != null);
+                        stm.WebUrl = station.Url;
+                        if (stm.HasTelegram == true && stm.TelegramFile is string tfile && 
+                            JObject.Parse(await JsonFile.ReadAllTextAsync(Path.ChangeExtension(tfile, ".json"), settings.Zip)) is JObject meta && 
+                            meta.Value<string>("fileName") is string tiff)
+                        {
+                            stm.TelegramUrl = $"/{election.Year}/{election.Kind.ToLowerInvariant()}/telegrama/{dm.Id}/{sm.Id}/{tiff}";
+                        }
+                    }
+                }
             });
+
+            // The election model is always zipped.
+            await ModelSerializer.SerializeAsync(election, Path.Combine(settings.BaseDir, "election.json.gz"));
         });
 
         var file = Path.Combine(settings.BaseDir, "election.json");
@@ -147,11 +189,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             .SelectMany(d => d.Sections
             .SelectMany(s => s.Circuits
             .SelectMany(c => c.Stations)))
-            .Where(s => !File.Exists(Path.Combine(
-                settings.BaseDir, "telegrama",
-                s.Circuit!.Section!.District!.Id.ToString(),
-                s.Circuit!.Section!.Id.ToString(),
-                s.Code + ".tiff")))
+            .Where(s => s.HasTelegram != true)
             .LongCount();
 
         double total = election.Districts
@@ -160,31 +198,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             .SelectMany(c => c.Stations)))
             .LongCount();
 
-        return Result(0, $"Completado. {(notelegram / total):P} sin telegrama.");
-    }
-
-    static async Task SaveAsync<T>(T value, string fileName, bool zip)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetDirectoryName(fileName))!);
-
-            if (zip)
-            {
-                using var json = File.Create(fileName + ".gz");
-                using var gzip = new GZipStream(json, CompressionLevel.Optimal);
-                await JsonSerializer.SerializeAsync(gzip, value, jsonOptions);
-            }
-            else
-            {
-                using var json = File.Create(fileName);
-                await JsonSerializer.SerializeAsync(json, value, jsonOptions);
-            }
-        }
-        catch (IOException e)
-        {
-            Error($"No se pudo guardar el archivo {fileName}: {e.Message}");
-        }
+        return Result(0, $"Completado. {notelegram / total:P} sin telegrama.");
     }
 
     class DownloadTelegram(District district, Settings settings, ResiliencePipeline resilience, IHttpClientFactory httpFactory, ProgressContext progress)
@@ -201,16 +215,13 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 var sectionId = 0;
 
                 double total = section.Circuits.SelectMany(c => c.Institutions).SelectMany(s => s.Stations).Count();
-                var task = progress.AddTask($"{district.Name} - {section.Name}".PadRight(30), new ProgressTaskSettings { MaxValue = total });
+                var task = progress.AddTask( $"Descargando {district.Name} - {section.Name}".PadRight(45), new ProgressTaskSettings { MaxValue = total });
 
                 foreach (var circuit in section.Circuits)
                 {
                     foreach (var station in circuit.Institutions.SelectMany(i => i.Stations))
                     {
                         task.Increment(1d);
-                        //current++;
-                        //progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code})");
-
                         districtId = int.Parse(station.Code[..2]);
                         sectionId = int.Parse(station.Code[2..5]);
 
@@ -219,11 +230,12 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                         var path = Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString());
                         Directory.CreateDirectory(path);
 
+                        var scopeFile = Path.Combine(path, station.Code + ".scope.json.gz");
+                        var metaFile = Path.Combine(path, station.Code + ".json.gz");
+
                         if (File.Exists(Path.Combine(path, station.Code + ".tiff")))
                         {
                             // Merge older scope.json with main json from a previous run.
-                            var scopeFile = Path.Combine(path, station.Code + ".scope.json.gz");
-                            var metaFile = Path.Combine(path, station.Code + ".json.gz");
                             if (File.Exists(scopeFile) && File.Exists(metaFile))
                             {
                                 var meta = JObject.Parse(await GzipFile.ReadAllTextAsync(metaFile));
@@ -232,14 +244,17 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                                 await GzipFile.WriteAllTextAsync(metaFile, meta.ToString());
                                 File.Delete(scopeFile);
                             }
-
-                            //progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code}[green]✓[/])");
                             continue;
                         }
+                        else if (File.Exists(scopeFile) && !File.Exists(metaFile))
+                        {
+                            // Change older scope.json into main json from a previous run, 
+                            var scope = JObject.Parse(await GzipFile.ReadAllTextAsync(scopeFile));
+                            await GzipFile.WriteAllTextAsync(metaFile, new JObject(new JProperty("datos", scope)).ToString());
+                            File.Delete(scopeFile);
+                        }
 
-                        //progress.Report($"Descargando telegramas de {district.Name} {(current / total):P} ({current}/{total}, {station.Code})");
-
-                        dynamic? tdata = await resilience.ExecuteAsync(async _ =>
+                        var tdata = await resilience.ExecuteAsync(async _ =>
                         {
                             var tiff = await http.GetStringAsync("/backend-difu/scope/data/getTiff/" + station.Code);
                             if (string.IsNullOrEmpty(tiff))
@@ -257,31 +272,28 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                             return JObject.Parse(scope);
                         });
 
-                        if (settings.Zip)
-                            await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json.gz"), sdata.ToString());
-                        else
-                            await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".scope.json"), sdata.ToString());
-
                         var location = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Select(x => x.ToString()));
                         sectionName = string.Join(" - ", sdata.SelectTokens("$.fathers[*].name").Reverse().Skip(1).Take(2).Select(x => x.ToString()));
 
-                        if (tdata is null)
+                        var data = new JObject(new JProperty("datos", sdata));
+                        var save = !File.Exists(metaFile);
+
+                        if (tdata is not null &&
+                            tdata.Value<string>("encodingBinary") is string encoded && 
+                            tdata.Value<string>("fileName") is string file)
                         {
-                            // progress.Report($"[red]x[/] No hay telegrama {location} - {station.Code}");
-                            continue;
+                            var img = Convert.FromBase64String(encoded);
+                            await File.WriteAllBytesAsync(Path.Combine(path, file), img);
+
+                            // Before saving the telegrama, we remove the binary data.
+                            tdata.Remove("encodingBinary");
+                            tdata.Add("datos", sdata);
+                            data = tdata;
+                            save = true;
                         }
 
-                        var img = Convert.FromBase64String((string)tdata.encodingBinary);
-                        var file = (string)tdata.fileName;
-                        await File.WriteAllBytesAsync(Path.Combine(path, file), img);
-
-                        // Before saving the telegrama, we remove the binary data.
-                        ((JObject)tdata).Remove("encodingBinary");
-
-                        if (settings.Zip)
-                            await GzipFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json.gz"), tdata.ToString());
-                        else
-                            await File.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), tdata.ToString());
+                        if (save)
+                            await JsonFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), data.ToString(), settings.Zip);
                     }
                 }
 
@@ -290,7 +302,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                     !File.Exists(Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString(), x.Code + ".tiff")));
 
                 if (sectionName is not null)
-                    Result(0, $"{sectionName} {(missing / stations):P} sin telegrama");
+                    Result(0, sectionName.PadRight(45) + $" {(missing / stations):P} sin telegrama");
             }
         }
     }
@@ -470,8 +482,9 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                 var districtId = int.Parse(districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2]);
 
-                await SaveAsync(districts[^1],
-                    Path.Combine(baseDir, "telegrama", $"{districtId}.json"),
+                await JsonFile.SerializeAsync(
+                    districts[^1],
+                    Path.Combine(baseDir, "telegrama", $"{districtId}.json"), 
                     zip);
 
                 break;

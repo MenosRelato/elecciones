@@ -8,7 +8,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console.Cli;
 using static Spectre.Console.AnsiConsole;
-using static MenosRelato.Results;
 using Spectre.Console;
 
 namespace MenosRelato.Commands;

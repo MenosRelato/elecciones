@@ -13,6 +13,7 @@ namespace MenosRelato;
 public class StatsTests : IClassFixture<ElectionFixture>
 {
     readonly ElectionFixture fixture;
+    readonly ITestOutputHelper output;
 
     public StatsTests(ElectionFixture fixture) => this.fixture = fixture;
 
@@ -20,9 +21,11 @@ public class StatsTests : IClassFixture<ElectionFixture>
     /// Verifies our aggregates with the official results from https://resultados.gob.ar/elecciones/1/0/1/-1/-1#agrupaciones
     /// </summary>
     [Theory]
-    [InlineData("PRESIDENTE Y VICE", "UNION POR LA PATRIA", 9_645_983)] //134	UNION POR LA PATRIA
-    [InlineData("PRESIDENTE Y VICE", "LA LIBERTAD AVANZA", 7_884_336)] //135	LA LIBERTAD AVANZA
-    [InlineData("PRESIDENTE Y VICE", "JUNTOS POR EL CAMBIO", 6_267_152)] //132	JUNTOS POR EL CAMBIO
+    [InlineData("PRESIDENTE Y VICE", "UNION POR LA PATRIA", 9_645_983)]     
+    [InlineData("PRESIDENTE Y VICE", "LA LIBERTAD AVANZA", 7_884_336)]      
+    [InlineData("PRESIDENTE Y VICE", "JUNTOS POR EL CAMBIO", 6_267_152)]    
+    [InlineData("PRESIDENTE Y VICE", "HACEMOS POR NUESTRO PAIS", 1_784_315)]
+    [InlineData("PRESIDENTE Y VICE", "FRENTE DE IZQUIERDA Y DE TRABAJADORES - UNIDAD", 709_932)]
     public void VerifyResults(string position, string party, int expected) 
     {
         var ballots = fixture.Election.GetBallots()
