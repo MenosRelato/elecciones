@@ -19,10 +19,12 @@ var config = new ConfigurationManager()
     .Build();
 
 string? proxy = default;
+bool advanced = false;
 
 new OptionSet
 {
     { "proxy=", x => proxy = x },
+    { "advanced", x => advanced = true },
 }.Parse(args);
 
 var services = new ServiceCollection()
@@ -75,12 +77,12 @@ app.Configure(config =>
 {
     config.SetApplicationName(ThisAssembly.Project.ToolCommandName);
     config.AddCommand<DatasetCommand>("dataset");
-    config.AddCommand<PrepareCommand>("prepare");
+    config.AddCommand<PrepareCommand>("prepare").Advanced(advanced);
     config.AddCommand<DatabaseCommand>("db").IsHidden();
-    config.AddCommand<TelegramCommand>("telegram");
-    config.AddCommand<UploadCommand>("upload");
-    config.AddCommand<DownloadCommand>("download");
-    config.AddCommand<SliceCommand>("slice");
+    config.AddCommand<TelegramCommand>("telegram").Advanced(advanced);
+    config.AddCommand<UploadCommand>("upload").Advanced(advanced);
+    config.AddCommand<DownloadCommand>("download").WithExample(["download --district 21"]); ;
+    config.AddCommand<SliceCommand>("slice").WithExample(["slice --format csv --district 2 --district 21"]);
 
 #if DEBUG
     config.PropagateExceptions();

@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel;
-using System.Diagnostics;
 using Azure.Storage.DataMovement;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
@@ -15,6 +14,8 @@ using Azure.Storage.DataMovement.Models;
 
 namespace MenosRelato.Commands;
 
+[Description(@"Descargar los resultados en formato JSON y telegramas con su metadata.
+Opcionalmente filtrar por distrito(s).")]
 public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
 {
     [Service(ServiceLifetime.Transient)]

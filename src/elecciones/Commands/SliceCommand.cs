@@ -5,11 +5,12 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 using Superpower;
 using static MenosRelato.Commands.PrepareCommand;
-using static MenosRelato.Results;
+using static MenosRelato.ConsoleExtensions;
 using static Spectre.Console.AnsiConsole;
 
 namespace MenosRelato.Commands;
 
+[Description("Crear un subset de datos para uno o mas distritos, en formato JSON o CSV.")]
 public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
 {
     public enum Format
@@ -21,24 +22,30 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
     public class Settings : ElectionSettings
     {
         [CommandOption("-d|--district <VALUES>")]
-        [Description("Distritos a incluir en el subset")]
+        [Description("Distrito(s) a incluir en el subset")]
         public int[] Districts { get; set; } = [];
 
         [CommandOption("-o|--output")]
-        [Description("Archivo de salida con el subset de datos. Por defecto 'slice.[json|csv]'")]
+        [Description("Archivo de salida con el subset de datos. Por defecto 'slice.json' (o '.csv')")]
         public string Output { get; set; } = "slice.json";
 
         [CommandOption("-f|--format")]
-        [Description("Formato del archivo a generar")]
+        [FormatDescription()]
         [DefaultValue(Format.Json)]
         public Format Format { get; set; } = Format.Json;
 
-        public override Spectre.Console.ValidationResult Validate()
+        public override ValidationResult Validate()
         {
             if (Districts.Length == 0)
-                return Spectre.Console.ValidationResult.Error("Debe especificar al menos un distrito.");
+                return ValidationResult.Error("Debe especificar al menos un distrito.");
 
             return base.Validate();
+        }
+
+        [AttributeUsage(AttributeTargets.All)]
+        public class FormatDescriptionAttribute : DescriptionAttribute
+        {
+            public override string Description => "Formato del archivo a generar. Opciones: " + string.Join(", ", Enum.GetNames(typeof(Format)));
         }
     }
 

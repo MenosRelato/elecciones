@@ -9,7 +9,7 @@ using Dapper;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Superpower;
-using static MenosRelato.Results;
+using static MenosRelato.ConsoleExtensions;
 using static Spectre.Console.AnsiConsole;
 
 namespace MenosRelato.Commands;

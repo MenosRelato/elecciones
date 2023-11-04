@@ -9,7 +9,7 @@ using Microsoft.Data.Sqlite;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Superpower;
-using static MenosRelato.Results;
+using static MenosRelato.ConsoleExtensions;
 using static Spectre.Console.AnsiConsole;
 
 namespace MenosRelato.Commands;
@@ -24,7 +24,7 @@ internal class DatabaseCommand : AsyncCommand<DatabaseCommand.Settings>
         public bool Reset { get; set; }
     }
 
-    //"año","distrito_id","distrito_nombre","seccionprovincial_id","seccionprovincial_nombre","seccion_id","seccion_nombre"
+    //"año","distrito_id","distrito_nombre","seccionprovincial_id","seccionprovincial_nombre","seccion_id","seccion_nombre"la
     record ElectoralSection(
         [property: JsonPropertyName("año")] int Year,
         [property: JsonPropertyName("distrito_id")] int DistrictId,

@@ -4,11 +4,11 @@ using System.IO.Compression;
 using Humanizer;
 using Spectre.Console.Cli;
 using static Spectre.Console.AnsiConsole;
-using static MenosRelato.Results;
+using static MenosRelato.ConsoleExtensions;
 
 namespace MenosRelato.Commands;
 
-[Description("Descargar el dataset completo de resultados.")]
+[Description("Descargar el dataset CSV completo de datos.gob.ar")]
 internal class DatasetCommand(IHttpClientFactory factory) : AsyncCommand<ElectionSettings>
 {
     const string paso = "https://www.argentina.gob.ar/sites/default/files/dine-resultados/2023-PROVISORIOS_PASO.zip";
