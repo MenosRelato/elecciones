@@ -267,7 +267,7 @@ public record Station
             Constants.DefaultCacheDir,
             Circuit!.Section!.District!.Election.Year.ToString(),
             Circuit!.Section!.District!.Election.Kind.ToLowerInvariant(),
-            "telegrama",
+            "telegram",
             Circuit!.Section!.District!.Id.ToString(),
             Circuit!.Section!.Id.ToString(),
             $"{Code}.tiff");

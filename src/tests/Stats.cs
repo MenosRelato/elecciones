@@ -42,7 +42,7 @@ public class StatsTests : IClassFixture<ElectionFixture>
         var escrutadas = 102_976;
         var missing = mesas - escrutadas;
 
-        var baseDir = Path.Combine(fixture.Settings.BaseDir, "telegrama");
+        var baseDir = Path.Combine(fixture.Settings.BaseDir, "telegram");
         var telegrams = Directory
             .EnumerateFiles(baseDir, "*.json.gz", SearchOption.AllDirectories)
             // Skip district files

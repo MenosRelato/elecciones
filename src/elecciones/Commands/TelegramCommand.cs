@@ -116,7 +116,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             ])
             .StartAsync(async ctx =>
         {
-            var path = Path.Combine(settings.BaseDir, "telegrama");
+            var path = Path.Combine(settings.BaseDir, "telegram");
             var districts = new[] { "*.json", "*.json.gz" }
                 .SelectMany(ext => Directory.EnumerateFiles(path, ext))
                 .Skip(settings.Skip).Take(settings.Take);
@@ -168,7 +168,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                             JObject.Parse(await JsonFile.ReadAllTextAsync(Path.ChangeExtension(tfile, ".json"), settings.Zip)) is JObject meta && 
                             meta.Value<string>("fileName") is string tiff)
                         {
-                            stm.TelegramUrl = $"/{election.Year}/{election.Kind.ToLowerInvariant()}/telegrama/{dm.Id}/{sm.Id}/{tiff}";
+                            stm.TelegramUrl = $"/{election.Year}/{election.Kind.ToLowerInvariant()}/telegram/{dm.Id}/{sm.Id}/{tiff}";
                         }
                     }
                 }
@@ -227,7 +227,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                         // The circuit is not part of the telegram, and we verified across the whole set that there are no 
                         // duplicate station codes within a section.
-                        var path = Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString());
+                        var path = Path.Combine(settings.BaseDir, "telegram", districtId.ToString(), sectionId.ToString());
                         Directory.CreateDirectory(path);
 
                         var scopeFile = Path.Combine(path, station.Code + ".scope.json.gz");
@@ -299,7 +299,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                 double stations = section.Circuits.SelectMany(c => c.Institutions.SelectMany(i => i.Stations)).Count();
                 double missing = section.Circuits.SelectMany(c => c.Institutions.SelectMany(i => i.Stations)).Count(x =>
-                    !File.Exists(Path.Combine(settings.BaseDir, "telegrama", districtId.ToString(), sectionId.ToString(), x.Code + ".tiff")));
+                    !File.Exists(Path.Combine(settings.BaseDir, "telegram", districtId.ToString(), sectionId.ToString(), x.Code + ".tiff")));
 
                 if (sectionName is not null)
                     Result(0, sectionName.PadRight(45) + $" {(missing / stations):P} sin telegrama");
@@ -459,7 +459,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                                             await retry.ExecuteAsync(async _ => await stationButton.ClickAsync());
 
-                                            var districtFile = Path.Combine(baseDir, "telegrama", $"{code[..2]}.json{(zip ? "gz" : "")}");
+                                            var districtFile = Path.Combine(baseDir, "telegram", $"district-{code[..2]}.json{(zip ? "gz" : "")}");
                                             if (File.Exists(districtFile))
                                             {
                                                 Result(0, $"Distrito {districts[^1].Name} ya esta indexado");
@@ -480,11 +480,11 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                     await ResetFilters();
                 }
 
-                var districtId = int.Parse(districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2]);
+                var districtId = districts[^1].Sections[0].Circuits[0].Institutions[0].Stations[0].Code[..2];
 
                 await JsonFile.SerializeAsync(
                     districts[^1],
-                    Path.Combine(baseDir, "telegrama", $"{districtId}.json"), 
+                    Path.Combine(baseDir, "telegram", $"district-{districtId}.json"), 
                     zip);
 
                 break;

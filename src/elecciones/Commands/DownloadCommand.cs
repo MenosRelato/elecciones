@@ -1,13 +1,17 @@
 ﻿using System.ComponentModel;
 using System.Diagnostics;
+using Azure.Storage.DataMovement;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
 using Microsoft.Azure.Storage.DataMovement;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Azure.Storage.Blobs;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using static Spectre.Console.AnsiConsole;
+using Azure.Storage.DataMovement.Blobs;
+using Azure.Storage.DataMovement.Models;
 
 namespace MenosRelato.Commands;
 
@@ -44,7 +48,7 @@ public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
             .AutoClear(false)
             .Columns(
             [
-                new TaskDescriptionColumn(),
+                new TaskDescriptionColumn { Alignment = Justify.Left },
                 new ProgressBarColumn(),
                 new PercentageColumn(),
                 new RemainingTimeColumn(),
@@ -55,58 +59,26 @@ public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
 
         await progress.StartAsync(async ctx =>
         {
-            var tasks = new List<Task>();
+            var baseDir = $"{settings.Year}/{settings.Election.ToLowerInvariant()}";
+            var tasks = new List<Task>
+            {
+                Task.Run(() => DownloadFile(ctx, container, $"{baseDir}/{Constants.ResultsFile}")),
+            };
 
-            var resultsTask = ctx.AddTask($"Descargando {Constants.ResultsFile}", new ProgressTaskSettings { MaxValue = 100 });
-            resultsTask.StartTask();
-            var blobName = $"{settings.Year}/{settings.Election.ToLowerInvariant()}/{Constants.ResultsFile}";
-            var resultsBlob = container.GetBlockBlobReference(blobName);
-            await resultsBlob.FetchAttributesAsync();
-            resultsTask.MaxValue = resultsBlob.Properties.Length;
-
-            tasks.Add(Task.Run(() => TransferManager.DownloadAsync(
-                resultsBlob, 
-                Path.Combine(settings.BaseDir, Constants.ResultsFile),
-                new DownloadOptions(),
-                new SingleTransferContext
-                {
-                    ShouldOverwriteCallbackAsync = ShouldOverwriteAsync,
-                    ProgressHandler = new Progress<TransferStatus>((x) => resultsTask.Value(x.BytesTransferred))
-                }).ContinueWith(_ => resultsTask.Value = resultsTask.MaxValue)));
+            var blobs = container.ListBlobs($"{baseDir}/telegram/district-");            
+            tasks.AddRange(blobs.OfType<ICloudBlob>().Select(x => Task.Run(() => 
+                DownloadFile(ctx, container, x.Name))));
 
             if (!settings.ResultsOnly)
             {
                 if (settings.Districts.Length == 0)
                 {
-                    var telegramsTask = ctx.AddTask("Calculando cantidad de telegramas", new ProgressTaskSettings { MaxValue = 100 });
-                    var list = container.GetDirectoryReference($"{settings.Year}/{settings.Election.ToLowerInvariant()}/telegrama")
-                        .ListBlobs(useFlatBlobListing: true);
-
-                    telegramsTask.MaxValue = list.Count();
-                    telegramsTask.Description = "Descargando telegramas";
-
-                    tasks.Add(Task.Run(() => TransferManager.DownloadDirectoryAsync(
-                        container.GetDirectoryReference($"{settings.Year}/{settings.Election.ToLowerInvariant()}/telegrama"),
-                        Path.Combine(settings.BaseDir, "telegrama"),
-                        new DownloadDirectoryOptions { Recursive = true },
-                        new DirectoryTransferContext
-                        {
-                            ShouldOverwriteCallbackAsync = async (object source, object destination) =>
-                            {
-                                if (source is not ICloudBlob blob ||
-                                    destination is not string destinationFile)
-                                    return false;
-
-                                var same = await blob.IsSameAsync(destinationFile);
-                                if (same == false)
-                                    // no files should be different.
-                                    Debugger.Break();
-
-                                return same == false;
-                            },
-                            ProgressHandler = new Progress<TransferStatus>(
-                                (progress) => telegramsTask.Value = progress.NumberOfFilesTransferred + progress.NumberOfFilesSkipped)
-                        })));
+                    tasks.Add(Task.Run(() => DownloadDistrict(ctx, container, settings)));
+                }
+                else
+                {
+                    tasks.AddRange(settings.Districts.Select(x => Task.Run(() 
+                        => DownloadDistrict(ctx, container, settings, x))));
                 }
             }
 
@@ -118,12 +90,122 @@ public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
         return 0;
     }
 
-    async Task<bool> ShouldOverwriteAsync(object source, object destination)
+    static async Task DownloadFile(ProgressContext ctx, CloudBlobContainer container, string relativePath)
+    {
+        var name = Path.GetFileName(relativePath);
+        var task = ctx.AddTask($"Chequeando {name}", new ProgressTaskSettings { MaxValue = 100 });
+        task.StartTask();
+
+        var blob = container.GetBlockBlobReference(relativePath);
+        await blob.FetchAttributesAsync();
+        task.MaxValue = blob.Properties.Length;
+
+        var target = Path.GetFullPath(Path.Combine(Constants.DefaultCacheDir, relativePath));
+        if (await blob.IsSameAsync(target) == true)
+        {
+            task.Value = task.MaxValue;
+            task.StopTask();
+            return;
+        }
+
+        task.Description = $"Descargando {name}";
+
+        await Microsoft.Azure.Storage.DataMovement.TransferManager.DownloadAsync(
+            blob,
+            target,
+            new DownloadOptions(),
+            new SingleTransferContext
+            {
+                ProgressHandler = new Progress<TransferStatus>((x) => task.Value(x.BytesTransferred))
+            });
+
+        task.Value = task.MaxValue;
+        task.StopTask();
+    }
+
+    static async Task DownloadDistrict(ProgressContext ctx, CloudBlobContainer blobContainer, StorageSettings settings, int? id = null)
+    {
+        await Task.CompletedTask;
+
+        var suffix = id is null ? "" : $"del distrito {id}";
+        var dir = $"telegram";
+        if (id is not null)
+            dir += $"/{id}";
+
+        var task = ctx.AddTask($"Calculando cantidad de telegramas {suffix}", new ProgressTaskSettings { MaxValue = 100 });
+        task.StartTask();
+
+        var blobClient = new BlobServiceClient(blobContainer.ServiceClient.BaseUri);
+        var container = blobClient.GetBlobContainerClient(blobContainer.Name);
+
+        var list = container
+            .GetBlobs(prefix: $"{settings.Year}/{settings.Election.ToLowerInvariant()}/{dir}");
+
+        task.MaxValue = list.Count();
+        task.Description = $"Descargando {task.MaxValue} telegramas {suffix}";
+
+        var manager = new Azure.Storage.DataMovement.TransferManager(new()
+        {
+            ErrorHandling = ErrorHandlingBehavior.StopOnAllFailures,
+        });
+
+        var options = new TransferOptions
+        {
+            CreateMode = StorageResourceCreateMode.Skip,
+            ProgressHandler = new Progress<StorageTransferProgress>(progress =>
+                task.Value = progress.CompletedCount + progress.SkippedCount)
+        };
+
+        //options.TransferSkipped += args =>
+        //{
+        //    return Task.CompletedTask;
+        //};
+        //options.TransferFailed += args =>
+        //{
+        //    return Task.CompletedTask;
+        //};
+
+        var localDir = Path.GetFullPath(Path.Combine(settings.BaseDir, dir));
+
+        var transfer = await manager.StartTransferAsync(
+            new BlobStorageResourceContainer(
+                container,
+                new BlobStorageResourceContainerOptions
+                {
+                    DirectoryPrefix = $"{settings.Year}/{settings.Election.ToLowerInvariant()}/{dir}",
+                }),
+            new LocalDirectoryResource(localDir),
+            options);
+
+        await transfer.AwaitCompletion();
+
+        task.Value = task.MaxValue;
+        task.StopTask();
+    }
+
+    static async Task<bool> ShouldOverwriteAsync(object source, object destination)
     {
         if (source is not ICloudBlob blob ||
             destination is not string destinationFile)
             return true;
 
         return await blob.IsSameAsync(destinationFile) == false;
+    }
+
+    class LocalDirectoryResource(string path) : LocalDirectoryStorageResourceContainer(path.Replace('\\', '/'))
+    {
+        public override StorageResourceSingle GetChildStorageResource(string childPath)
+        {
+            // If it contains a path dir, combine
+            //if (childPath.Split('/').Length > 1)
+                return new LocalFileResource(System.IO.Path.Combine(Path, childPath.TrimStart('/', '\\')));
+
+            // Otherwise, consider it a root file. This only applies to our telegram structure though.
+            //return new LocalFileResource(Path + "." + childPath);
+        }
+
+        class LocalFileResource(string path) : LocalFileStorageResource(path.Replace('\\', '/'))
+        {
+        }
     }
 }

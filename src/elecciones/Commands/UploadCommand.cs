@@ -65,6 +65,8 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
             .StartAsync(async ctx =>
         {
             var task = ctx.AddTask($"Subiendo {relativeDir} {size.Bytes()}", new ProgressTaskSettings { MaxValue = size });
+            task.StartTask();
+
             var progress = new DirectoryTransferContext
             {
                 ShouldTransferCallbackAsync = (sourcePath, destinationPath) =>
@@ -106,6 +108,9 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
                 container.GetDirectoryReference(source.Substring(Constants.DefaultCacheDir.Length + 1).Replace('\\', '/')),
                 new UploadDirectoryOptions { Recursive = true }, 
                 progress);
+
+            task.Value = task.MaxValue;
+            task.StopTask();
         });
 
         MarkupLine("[green]✓[/] Completado");

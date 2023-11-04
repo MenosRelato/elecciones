@@ -37,7 +37,7 @@ public class Misc(ITestOutputHelper output)
     [LocalFact]
     public async Task OpenJson()
     {
-        var json = await GzipFile.ReadAllTextAsync(@"C:\Users\dev\AppData\Roaming\MenosRelato\elecciones\telegrama\24.json.gz");
+        var json = await GzipFile.ReadAllTextAsync(@"C:\Users\dev\AppData\Roaming\MenosRelato\elecciones\telegram\24.json.gz");
 
         output.WriteLine(json);
     }
@@ -88,7 +88,7 @@ public class Misc(ITestOutputHelper output)
 
     public void ApplyFilter()
     {
-        var file = Path.Combine(Constants.DefaultCacheDir, @"2023\general\telegrama\1\1\00001\0100100001X.tiff");
+        var file = Path.Combine(Constants.DefaultCacheDir, @"2023\general\telegram\1\1\00001\0100100001X.tiff");
         Assert.True(File.Exists(file));
 
         var image = Image.Load<Rgba32>(file);

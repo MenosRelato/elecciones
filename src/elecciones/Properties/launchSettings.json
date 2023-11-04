@@ -2,7 +2,7 @@
   "profiles": {
     "elecciones": {
       "commandName": "Project",
-      "commandLineArgs": "upload"
+      "commandLineArgs": "download -d 24"
     }
   }
 }
