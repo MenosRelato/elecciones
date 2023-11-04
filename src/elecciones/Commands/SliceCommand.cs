@@ -9,7 +9,12 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
     {
         [CommandOption("-d|--district <VALUES>")]
         [Description("Distritos a incluir en el subset")]
-        public string[] Districts { get; set; } = Array.Empty<string>();
+        public int[] Districts { get; set; } = [];
+
+        [CommandArgument(0, "[output]")]
+        [Description("Archivo de salida con el subset de datos")]
+        [DefaultValue("slice.json")]
+        public string Output { get; set; } = "slice.json";
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -17,12 +22,22 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
         var file = Path.Combine(settings.BaseDir, Constants.ResultsFile);
 
         if (!File.Exists(file))
-        {
-
-        }
+            await app.RunAsync(["download", "-r"]);
 
         var election = await ModelSerializer.DeserializeAsync(Path.Combine(settings.BaseDir, Constants.ResultsFile));
+        if (election is null)
+            return -1;
 
-        throw new NotImplementedException();
+        var districts = settings.Districts.ToHashSet();
+
+        foreach (var district in election.Districts.ToArray())
+        {
+            if (!districts.Contains(district.Id))
+                election.Districts.Remove(district);    
+        }
+
+        await ModelSerializer.SerializeAsync(election, settings.Output);
+        
+        return 0;
     }
 }

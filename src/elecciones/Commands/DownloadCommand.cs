@@ -65,20 +65,23 @@ public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
                 Task.Run(() => DownloadFile(ctx, container, $"{baseDir}/{Constants.ResultsFile}")),
             };
 
-            var blobs = container.ListBlobs($"{baseDir}/telegram/district-");            
-            tasks.AddRange(blobs.OfType<ICloudBlob>().Select(x => Task.Run(() => 
-                DownloadFile(ctx, container, x.Name))));
-
             if (!settings.ResultsOnly)
             {
                 if (settings.Districts.Length == 0)
                 {
                     tasks.Add(Task.Run(() => DownloadDistrict(ctx, container, settings)));
+
+                    var blobs = container.ListBlobs($"{baseDir}/telegram/district-");
+                    tasks.AddRange(blobs.OfType<ICloudBlob>().Select(x => Task.Run(() =>
+                        DownloadFile(ctx, container, x.Name))));
                 }
                 else
                 {
                     tasks.AddRange(settings.Districts.Select(x => Task.Run(() 
                         => DownloadDistrict(ctx, container, settings, x))));
+
+                    tasks.AddRange(settings.Districts.Select(x => Task.Run(() =>
+                        DownloadFile(ctx, container, $"{baseDir}/telegram/district-{x:D2}.json.gz"))));
                 }
             }
 

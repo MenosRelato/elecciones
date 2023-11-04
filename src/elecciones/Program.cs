@@ -78,9 +78,9 @@ app.Configure(config =>
     config.AddCommand<PrepareCommand>("prepare");
     config.AddCommand<DatabaseCommand>("db").IsHidden();
     config.AddCommand<TelegramCommand>("telegram");
-    config.AddCommand<GzipCommand>("gzip").IsHidden();
     config.AddCommand<UploadCommand>("upload");
     config.AddCommand<DownloadCommand>("download");
+    config.AddCommand<SliceCommand>("slice");
 
 #if DEBUG
     config.PropagateExceptions();
