@@ -80,6 +80,7 @@ app.Configure(config =>
     config.AddCommand<TelegramCommand>("telegram");
     config.AddCommand<GzipCommand>("gzip").IsHidden();
     config.AddCommand<UploadCommand>("upload");
+    config.AddCommand<DownloadCommand>("download");
 
 #if DEBUG
     config.PropagateExceptions();

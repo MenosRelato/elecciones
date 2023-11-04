@@ -224,7 +224,7 @@ public class PrepareCommand(ICommandApp app) : AsyncCommand<PrepareCommand.Setti
                 }
             });
 
-        await ModelSerializer.SerializeAsync(election, Path.Combine(settings.BaseDir, "election.json.gz"));
+        await ModelSerializer.SerializeAsync(election, Path.Combine(settings.BaseDir, Constants.ResultsFile));
 
         return Result(0, "Done");
     }

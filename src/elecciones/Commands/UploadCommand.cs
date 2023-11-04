@@ -20,15 +20,15 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
     [Service(ServiceLifetime.Transient)]
     public class Settings(IConfiguration config) : StorageSettings(config)
     {
-        public override Spectre.Console.ValidationResult Validate()
+        public override ValidationResult Validate()
         {
             if (base.Validate() is var result && !result.Successful)
                 return result;
 
             if (!CloudStorageAccount.TryParse(Storage, out _))
-                return Spectre.Console.ValidationResult.Error("Por favor especificar una connexion de Azure Storage con permisos de escritura.");
+                return ValidationResult.Error("Por favor especificar una connexion de Azure Storage con permisos de escritura.");
 
-            return Spectre.Console.ValidationResult.Success();
+            return ValidationResult.Success();
         }
     }
 
@@ -86,25 +86,7 @@ public partial class UploadCommand: AsyncCommand<UploadCommand.Settings>
                         sourcePath is not string sourceFile)
                         return true;
 
-                    await blob.FetchAttributesAsync();
-
-                    // Quickly check if the file is the same size and exit, since hashing is more expensive
-                    if (new FileInfo(sourceFile).Length == blob.Properties.Length)
-                    {
-                        skipped += blob.Properties.Length;
-                        return false;
-                    }
-
-                    var targetHash = blob.Properties.ContentMD5;
-
-                    // Calculate MD5 of sourceFile
-                    using var stream = File.OpenRead(sourceFile);
-                    var sourceHash = Convert.ToBase64String(await MD5.HashDataAsync(stream));
-
-                    if (sourceHash == targetHash)
-                        skipped += blob.Properties.Length;
-
-                    return sourceHash != targetHash;
+                    return await blob.IsSameAsync(sourceFile) == false;
                 },
                 SetAttributesCallbackAsync = (sourcePath, destinationPath) =>
                 {
