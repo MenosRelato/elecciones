@@ -1,9 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
-using System.IO.Compression;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
@@ -12,8 +9,6 @@ using Polly;
 using Polly.Retry;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using static System.Collections.Specialized.BitVector32;
-using static System.Formats.Asn1.AsnWriter;
 using static MenosRelato.ConsoleExtensions;
 using static Spectre.Console.AnsiConsole;
 
@@ -39,11 +34,6 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
         [CommandOption("-d|--download", IsHidden = true)]
         [Description("Descarga telegramas directa, sin pre-procesamiento de distritos")]
         public bool DownloadOnly { get; init; } = false;
-
-        [CommandOption("-z|--zip")]
-        [Description("Comprimir JSON de metadata con GZip")]
-        [DefaultValue(true)]
-        public bool Zip { get; set; } = true;
     }
 
     record District(string? Name)
@@ -98,7 +88,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                 await Parallel.ForEachAsync(values, new ParallelOptions { MaxDegreeOfParallelism = settings.Paralellize }, async (i, c) =>
                 {
-                    var prepare = new PrepareTelegram(chrome, resilience, settings.BaseDir, i, settings.Zip, progress);
+                    var prepare = new PrepareTelegram(chrome, resilience, settings.BaseDir, i, true, progress);
                     await prepare.ExecuteAsync();
                 });
             });
@@ -121,10 +111,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 .SelectMany(ext => Directory.EnumerateFiles(path, ext))
                 .Skip(settings.Skip).Take(settings.Take);
 
-            var file = Path.Combine(settings.BaseDir, "election.json");
-            if (settings.Zip)
-                file += ".gz";
-
+            var file = Path.Combine(settings.BaseDir, "election.json.gz");
             var election = await ModelSerializer.DeserializeAsync(Path.Combine(settings.BaseDir, file));
             Debug.Assert(election != null);
 
@@ -165,7 +152,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                         Debug.Assert(stm != null);
                         stm.WebUrl = station.Url;
                         if (stm.HasTelegram == true && stm.TelegramFile is string tfile && 
-                            JObject.Parse(await JsonFile.ReadAllTextAsync(Path.ChangeExtension(tfile, ".json"), settings.Zip)) is JObject meta && 
+                            JObject.Parse(await JsonFile.ReadAllTextAsync(Path.ChangeExtension(tfile, ".json"), true)) is JObject meta && 
                             meta.Value<string>("fileName") is string tiff)
                         {
                             stm.TelegramUrl = $"/{election.Year}/{election.Kind.ToLowerInvariant()}/telegram/{dm.Id}/{sm.Id}/{tiff}";
@@ -178,10 +165,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
             await ModelSerializer.SerializeAsync(election, Path.Combine(settings.BaseDir, "election.json.gz"));
         });
 
-        var file = Path.Combine(settings.BaseDir, "election.json");
-        if (settings.Zip)
-            file += ".gz";
-
+        var file = Path.Combine(settings.BaseDir, "election.json.gz");
         var election = await ModelSerializer.DeserializeAsync(Path.Combine(settings.BaseDir, file));
         Debug.Assert(election != null);
 
@@ -293,7 +277,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                         }
 
                         if (save)
-                            await JsonFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), data.ToString(), settings.Zip);
+                            await JsonFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), data.ToString(), true);
                     }
                 }
 
