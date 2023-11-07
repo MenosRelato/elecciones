@@ -2,7 +2,6 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using NuGet.Protocol.Plugins;
 using Spectre.Console;
 
 namespace MenosRelato;
@@ -16,22 +15,6 @@ public static class JsonFile
         WriteIndented = true,
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
-
-    public static async Task<string> ReadAllTextAsync(string fileName, bool compressed = false)
-    {
-        if (compressed)
-            return await GzipFile.ReadAllTextAsync(fileName + ".gz");
-
-        return await File.ReadAllTextAsync(fileName);
-    }
-
-    public static async Task WriteAllTextAsync(string fileName, string? contents, bool compressed = false)
-    {
-        if (compressed)
-            await GzipFile.WriteAllTextAsync(fileName + ".gz", contents);
-        else
-            await File.WriteAllTextAsync(fileName, contents);
-    }
 
     public static async Task SerializeAsync<T>(T value, string fileName, bool compressed = true)
     {
@@ -56,6 +39,29 @@ public static class JsonFile
             AnsiConsole.MarkupLine($"[red]x[/] No se pudo guardar el archivo {fileName}: {e.Message}");
             Debug.Fail($"No se pudo guardar el archivo {fileName}: {e.Message}", e.Message);
         }
+    }
+}
+
+public static class TextFile
+{
+    public static async Task<string> ReadAllTextAsync(string fileName, bool compressed = false)
+    {
+        if (Path.GetExtension(fileName) == ".gz")
+            return await GzipFile.ReadAllTextAsync(fileName);
+        else if (compressed)
+            return await GzipFile.ReadAllTextAsync(fileName + ".gz");
+
+        return await File.ReadAllTextAsync(fileName);
+    }
+
+    public static async Task WriteAllTextAsync(string fileName, string? contents, bool compressed = false)
+    {
+        if (Path.GetExtension(fileName) == ".gz")
+            await GzipFile.WriteAllTextAsync(fileName, contents);
+        else if (compressed)
+            await GzipFile.WriteAllTextAsync(fileName + ".gz", contents);
+        else
+            await File.WriteAllTextAsync(fileName, contents);
     }
 }
 

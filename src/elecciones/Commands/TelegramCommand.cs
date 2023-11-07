@@ -151,8 +151,8 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                         var stm = sm.Circuits.SelectMany(x => x.Stations).FirstOrDefault(s => s.Code == station.Code);
                         Debug.Assert(stm != null);
                         stm.WebUrl = station.Url;
-                        if (stm.HasTelegram == true && stm.TelegramFile is string tfile && 
-                            JObject.Parse(await JsonFile.ReadAllTextAsync(Path.ChangeExtension(tfile, ".json"), true)) is JObject meta && 
+                        if (stm.HasTelegram == true && stm.TelegramFile is string tfile &&
+                            JObject.Parse(await TextFile.ReadAllTextAsync(Path.ChangeExtension(tfile, ".json.gz"))) is JObject meta &&
                             meta.Value<string>("fileName") is string tiff)
                         {
                             stm.TelegramUrl = $"/{election.Year}/{election.Kind.ToLowerInvariant()}/telegram/{dm.Id}/{sm.Id}/{tiff}";
@@ -199,7 +199,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                 var sectionId = 0;
 
                 double total = section.Circuits.SelectMany(c => c.Institutions).SelectMany(s => s.Stations).Count();
-                var task = progress.AddTask( $"Descargando {district.Name} - {section.Name}".PadRight(45), new ProgressTaskSettings { MaxValue = total });
+                var task = progress.AddTask($"Descargando {district.Name} - {section.Name}".PadRight(45), new ProgressTaskSettings { MaxValue = total });
 
                 foreach (var circuit in section.Circuits)
                 {
@@ -219,16 +219,42 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                         if (File.Exists(Path.Combine(path, station.Code + ".tiff")))
                         {
-                            // Merge older scope.json with main json from a previous run.
-                            if (File.Exists(scopeFile) && File.Exists(metaFile))
+                            // We should have no cases where we have meta without tiff.
+                            Debug.Assert(File.Exists(metaFile));
+                            try
                             {
                                 var meta = JObject.Parse(await GzipFile.ReadAllTextAsync(metaFile));
-                                var scope = JObject.Parse(await GzipFile.ReadAllTextAsync(scopeFile));
-                                meta.Add("datos", scope);
-                                await GzipFile.WriteAllTextAsync(metaFile, meta.ToString());
-                                File.Delete(scopeFile);
+                                var update = false;
+                                // Merge older scope.json with main json from a previous run.
+                                if (File.Exists(scopeFile))
+                                {
+                                    var scope = JObject.Parse(await GzipFile.ReadAllTextAsync(scopeFile));
+                                    meta.Add("datos", scope);
+                                    update = true;
+                                    File.Delete(scopeFile);
+                                }
+                                else
+                                {
+                                    update = meta.First is not JProperty prop ||
+                                        prop.Name != "url";
+                                }
+
+                                if (update)
+                                {
+                                    meta.Remove("url");
+                                    meta.AddFirst(new JProperty("url", station.Url));
+                                    await GzipFile.WriteAllTextAsync(metaFile, meta.ToString());
+                                }
+
+                                continue;
                             }
-                            continue;
+                            catch (Exception e)
+                            {
+                                // For whatever reason, we failed to load/update the existing 
+                                // meta file, so we'll just overwrite it.
+                                Error(Path.GetFileName(metaFile) + ": " + e.Message);
+                                File.Delete(metaFile);
+                            }
                         }
                         else if (File.Exists(scopeFile) && !File.Exists(metaFile))
                         {
@@ -263,7 +289,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                         var save = !File.Exists(metaFile);
 
                         if (tdata is not null &&
-                            tdata.Value<string>("encodingBinary") is string encoded && 
+                            tdata.Value<string>("encodingBinary") is string encoded &&
                             tdata.Value<string>("fileName") is string file)
                         {
                             var img = Convert.FromBase64String(encoded);
@@ -277,7 +303,12 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
                         }
 
                         if (save)
-                            await JsonFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json"), data.ToString(), true);
+                        {
+                            // always persist web url of polling station.
+                            data.Remove("url");
+                            data.AddFirst(new JProperty("url", station.Url));
+                            await TextFile.WriteAllTextAsync(Path.Combine(path, station.Code + ".json.gz"), data.ToString());
+                        }
                     }
                 }
 
@@ -468,7 +499,7 @@ internal class TelegramCommand(AsyncLazy<IBrowser> browser, ResiliencePipeline r
 
                 await JsonFile.SerializeAsync(
                     districts[^1],
-                    Path.Combine(baseDir, "telegram", $"district-{districtId}.json"), 
+                    Path.Combine(baseDir, "telegram", $"district-{districtId}.json"),
                     zip);
 
                 break;

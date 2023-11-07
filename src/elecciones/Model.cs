@@ -84,6 +84,7 @@ public record Election(int Year, string Kind)
     }
     
     public Stats? Stats { get; set; }
+    public List<District>? Outliers { get; set; }
 
     public Party? GetOrAddParty(string? name)
     {
@@ -143,6 +144,7 @@ public record District(int Id, string Name)
 
     [JsonIgnore, Newtonsoft.Json.JsonIgnore]
     public Election? Election { get; set; }
+    public Stats? Stats { get; set; }
 
     public IList<Section> Sections
     {
@@ -195,6 +197,7 @@ public record Circuit(string Id, string? Name)
     [JsonIgnore, Newtonsoft.Json.JsonIgnore]
     public Section? Section { get; set; }
     public Stats? Stats { get; set; }
+    public List<Station>? Outliers { get; set; }
 
     public IList<Station> Stations
     {
@@ -309,6 +312,33 @@ public record Ballot(string Kind, int Count, string Position, string? Party, str
     [JsonIgnore, Newtonsoft.Json.JsonIgnore]
     public Station? Station { get; set; }
 }
+
+public record Telegram(string Id, DateTime Date, string Url, 
+    DistrictId? District, SectionId? Section, string? Circuit, string Local,
+    StationInfo Station, PartyInfo[] Parties, UserId User)
+{
+    public string? Anomaly { get; set; }
+    public string? WebUrl { get; set; }
+    public string? TelegramUrl { get; set; }
+}
+
+public record DistrictId(int Id, string Name);
+public record SectionId(int Id, string Name);
+public record StationInfo(int Census, int Electors, int Envelopes, 
+    int TotalVotes, int Valid, int Affirmative, 
+    int Blank, int Null, int Appealed, int Contested, int Command,
+    [property: JsonPropertyName("percAbstention")] double Abstention, 
+    [property: JsonPropertyName("percBlank")] double BlankPercentage,
+    [property: JsonPropertyName("percNull")] double NullPercentage,
+    [property: JsonPropertyName("percAppealed")] double AppealedPercentage,
+    [property: JsonPropertyName("percContested")] double ContestedPercentage,
+    [property: JsonPropertyName("percCommand")] double CommandPercentage)
+{
+    public int SumVotes => Affirmative + Blank + Null + Appealed + Contested + Command;
+}
+public record PartyInfo(string Name, int Votes, 
+    [property: JsonPropertyName("perc")] double Percentage);
+public record UserId(string Id, string Name);
 
 class ActionCollection<T> : ObservableCollection<T>
 {

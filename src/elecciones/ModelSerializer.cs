@@ -6,46 +6,58 @@ namespace MenosRelato;
 
 public static class ModelSerializer
 {
-    public static async Task<Election?> DeserializeAsync(string path)
+    public static JsonSerializerOptions Options { get; } = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
+        ReferenceHandler = ReferenceHandler.IgnoreCycles,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        // We're zipping anyway, indenting won't take much extra
+        WriteIndented = true,
+    };
+
+    public static Task<Election?> DeserializeAsync(string path) => DeserializeAsync<Election>(path);
+
+    public static async Task<T?> DeserializeAsync<T>(string path)
     {
         using var stream = File.OpenRead(path);
         if (Path.GetExtension(path) == ".gz")
         {
             using var zip = new GZipStream(stream, CompressionMode.Decompress);
-            return await DeserializeAsync(zip);
+            return await DeserializeAsync<T>(zip);
         }
         else
         {
-            return await DeserializeAsync(stream);
+            return await DeserializeAsync<T>(stream);
         }
     }
 
-    static async Task<Election?> DeserializeAsync(Stream stream)
+    static async Task<T?> DeserializeAsync<T>(Stream stream)
     {
         using var reader = new StreamReader(stream);
         var settings = new JsonSerializerOptions
         {
+            // Reusable string MUST be short-lived.
             Converters = { new ReusableStringConverter() },
         };
 
-        return await JsonSerializer.DeserializeAsync<Election>(stream, settings);
+        return await JsonSerializer.DeserializeAsync<T>(stream, settings);
     }
 
-    public static async Task SerializeAsync(Election election, string path)
+    public static async Task SerializeAsync<T>(T model, string path)
     {
         using var stream = File.Create(path);
         if (Path.GetExtension(path) == ".gz")
         {
             using var zip = new GZipStream(stream, CompressionLevel.SmallestSize);
-            await SerializeAsync(election, zip);
+            await SerializeAsync(model, zip);
         }
         else
         {
-            await SerializeAsync(election, stream);
+            await SerializeAsync(model, stream);
         }
     }
 
-    static async Task SerializeAsync(Election election, Stream stream) => await JsonSerializer.SerializeAsync(stream, election, new JsonSerializerOptions
+    static async Task SerializeAsync<T>(T model, Stream stream) => await JsonSerializer.SerializeAsync(stream, model, new JsonSerializerOptions
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
@@ -54,7 +66,7 @@ public static class ModelSerializer
         WriteIndented = true,
     });
 
-    class ReusableStringConverter : JsonConverter<string>
+    public class ReusableStringConverter : JsonConverter<string>
     {
         readonly Dictionary<string, string> _items = new();
 
@@ -81,6 +93,20 @@ public static class ModelSerializer
             }
         }
 
-        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) => throw new NotImplementedException();
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) => writer.WriteStringValue(value);
+    }
+
+    public class DateTimeConverter : JsonConverter<DateTime>
+    {
+        public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString()!;
+            return DateTime.Parse(value);
+        }
+
+        public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
+        {
+            writer.WriteStringValue(value.ToString("O"));
+        }
     }
 }

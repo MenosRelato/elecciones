@@ -9,6 +9,7 @@ TestResults
 .idea
 .azstoragedml
 
+*.http
 *.suo
 *.sdf
 *.userprefs
