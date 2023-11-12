@@ -22,25 +22,17 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
     public class Settings : ElectionSettings
     {
         [CommandOption("-d|--district <VALUES>")]
-        [Description("Distrito(s) a incluir en el subset")]
+        [Description("Distrito(s) a incluir en el subset.")]
         public int[] Districts { get; set; } = [];
 
         [CommandOption("-o|--output")]
-        [Description("Archivo de salida con el subset de datos. Por defecto 'slice.json' (o '.csv')")]
-        public string Output { get; set; } = "slice.json";
+        [Description("Directorio de salida para los archivos de cada distrito.")]
+        public string Output { get; set; } = Path.Combine(Constants.DefaultCacheDir, "dataset", "slice");
 
         [CommandOption("-f|--format")]
         [FormatDescription()]
         [DefaultValue(Format.Json)]
         public Format Format { get; set; } = Format.Json;
-
-        public override ValidationResult Validate()
-        {
-            if (Districts.Length == 0)
-                return ValidationResult.Error("Debe especificar al menos un distrito.");
-
-            return base.Validate();
-        }
 
         [AttributeUsage(AttributeTargets.All)]
         public class FormatDescriptionAttribute : DescriptionAttribute
@@ -52,6 +44,10 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
         var districts = settings.Districts.ToHashSet();
+
+        bool ShouldRemove(int district) => districts?.Count > 0 && !districts.Contains(district);
+
+        Directory.CreateDirectory(settings.Output);
 
         if (settings.Format == Format.Json)
         {
@@ -67,11 +63,11 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
 
             foreach (var district in election.Districts.ToArray())
             {
-                if (!districts.Contains(district.Id))
-                    election.Districts.Remove(district);
+                if (!ShouldRemove(district.Id))
+                {
+                    await ModelSerializer.SerializeAsync(district, Path.Combine(settings.Output, district.Id.ToString("D2") + ".json"));
+                }
             }
-
-            await ModelSerializer.SerializeAsync(election, settings.Output);
 
             return 0;
         }
@@ -89,7 +85,6 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
 
         if (Path.GetExtension(Path.GetFileName(settings.Output)) is ".json")
             settings.Output = Path.ChangeExtension(settings.Output, ".csv");
-
 
         var total = await Status().StartAsync("Contando votos", async ctx =>
         {
@@ -115,10 +110,11 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
             {
                 var first = true;
                 var header = Array.Empty<string>();
+                var headerline = "";
                 var task = ctx.AddTask("Procesando votos", new() { MaxValue = total });
 
-                using var output = File.Create(settings.Output);
-                using var writer = new StreamWriter(output, Encoding.UTF8);
+                //using var output = File.Create(settings.Output);
+                //using var writer = new StreamWriter(output, Encoding.UTF8);
 
                 await foreach (var line in File.ReadLinesAsync(results, Encoding.UTF8))
                 {
@@ -126,7 +122,7 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
                     {
                         first = false;
                         header = CsvSerializer.LineParser.Parse(line).Select(x => x.Trim('"')).ToArray();
-                        await writer.WriteLineAsync(line);
+                        headerline = line;
                         continue;
                     }
 
@@ -135,10 +131,14 @@ public class SliceCommand(ICommandApp app) : AsyncCommand<SliceCommand.Settings>
                     var value = CsvSerializer.Deserialize<BallotCsv>(header, line);
                     Debug.Assert(value != null);
 
-                    if (!districts.Contains(value.DistrictId))
+                    if (ShouldRemove(value.DistrictId))
                         continue;
 
-                    await writer.WriteLineAsync(line);
+                    var file = Path.Combine(settings.Output, value.DistrictId.ToString("D2") + ".csv");
+                    if (!File.Exists(file))
+                        await File.WriteAllTextAsync(file, headerline, Encoding.UTF8);
+
+                    await File.AppendAllTextAsync(file, line + Environment.NewLine, Encoding.UTF8);
                 }
             });
 
