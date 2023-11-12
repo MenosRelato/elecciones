@@ -20,11 +20,17 @@ public static class JsonFile
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetDirectoryName(fileName))!);
+            if (Path.GetDirectoryName(fileName) is { } path)
+                Directory.CreateDirectory(path);
+
+            if (compressed && Path.GetExtension(fileName) != ".gz")
+                fileName += ".gz";
+            else if (!compressed && Path.GetExtension(fileName) == ".gz")
+                compressed = true;
 
             if (compressed)
             {
-                using var json = File.Create(fileName + ".gz");
+                using var json = File.Create(fileName);
                 using var gzip = new GZipStream(json, CompressionLevel.Optimal);
                 await JsonSerializer.SerializeAsync(gzip, value, options);
             }
@@ -46,6 +52,8 @@ public static class TextFile
 {
     public static async Task<string> ReadAllTextAsync(string fileName, bool compressed = false)
     {
+        Debug.Assert(File.Exists(fileName));
+
         if (Path.GetExtension(fileName) == ".gz")
             return await GzipFile.ReadAllTextAsync(fileName);
         else if (compressed)
@@ -56,6 +64,9 @@ public static class TextFile
 
     public static async Task WriteAllTextAsync(string fileName, string? contents, bool compressed = false)
     {
+        if (Path.GetDirectoryName(fileName) is { } path)
+            Directory.CreateDirectory(path);
+
         if (Path.GetExtension(fileName) == ".gz")
             await GzipFile.WriteAllTextAsync(fileName, contents);
         else if (compressed)
@@ -67,18 +78,22 @@ public static class TextFile
 
 public static class GzipFile
 {
-    public static async Task<string> ReadAllTextAsync(string path)
+    public static async Task<string> ReadAllTextAsync(string fileName)
     {
-        Debug.Assert(File.Exists(path));
-        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Debug.Assert(File.Exists(fileName));
+
+        using var stream = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var zip = new GZipStream(stream, CompressionMode.Decompress);
         using var reader = new StreamReader(zip);
         return await reader.ReadToEndAsync();
     }
 
-    public static async Task WriteAllTextAsync(string path, string? contents)
+    public static async Task WriteAllTextAsync(string fileName, string? contents)
     {
-        using var stream = File.Create(path);
+        if (Path.GetDirectoryName(fileName) is { } path)
+            Directory.CreateDirectory(path);
+
+        using var stream = File.Create(fileName);
         using var zip = new GZipStream(stream, CompressionLevel.Optimal);
         using var writer = new StreamWriter(zip);
         await writer.WriteAsync(contents);
