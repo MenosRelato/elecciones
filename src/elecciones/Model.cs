@@ -313,29 +313,27 @@ public record Ballot(string Kind, int Count, string Position, string? Party, str
     public Station? Station { get; set; }
 }
 
-public record Telegram(string Id, DateTime Date, string Url, 
+public record Telegram(string Id, DateTime Date, 
+    [property: JsonPropertyName("web")] string Url,
+    [property: JsonPropertyName("url")] string TelegramUrl,
     DistrictId? District, SectionId? Section, string? Circuit, string Local,
     StationInfo Station, PartyInfo[] Parties, UserId User)
 {
     public string? Anomaly { get; set; }
-    public string? WebUrl { get; set; }
-    public string? TelegramUrl { get; set; }
+    public Stats? Stats { get; set; }
 }
 
 public record DistrictId(int Id, string Name);
 public record SectionId(int Id, string Name);
 public record StationInfo(int Census, int Electors, int Envelopes, 
-    int TotalVotes, int Valid, int Affirmative, 
+    int SumVotes, int TotalVotes, int Valid, int Affirmative, 
     int Blank, int Null, int Appealed, int Contested, int Command,
     [property: JsonPropertyName("percAbstention")] double Abstention, 
     [property: JsonPropertyName("percBlank")] double BlankPercentage,
     [property: JsonPropertyName("percNull")] double NullPercentage,
     [property: JsonPropertyName("percAppealed")] double AppealedPercentage,
     [property: JsonPropertyName("percContested")] double ContestedPercentage,
-    [property: JsonPropertyName("percCommand")] double CommandPercentage)
-{
-    public int SumVotes => Affirmative + Blank + Null + Appealed + Contested + Command;
-}
+    [property: JsonPropertyName("percCommand")] double CommandPercentage);
 public record PartyInfo(string Name, int Votes, 
     [property: JsonPropertyName("perc")] double Percentage);
 public record UserId(string Id, string Name);
