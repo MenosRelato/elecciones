@@ -32,7 +32,7 @@ public class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
 
         [CommandOption("-o|--open")]
         [Description("Abrir la carpeta de descarga al finalizar")]
-        [DefaultValue(true)]
+        [DefaultValue(false)]
         public bool Open { get; set; } = false;
     }
 

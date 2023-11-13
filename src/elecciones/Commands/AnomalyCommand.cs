@@ -46,6 +46,14 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
                 return Error("No se pudieron descargar los telegramas");
         }
 
+        var electionFile = Path.Combine(settings.BaseDir, "election.json.gz");
+        if (!File.Exists(electionFile))
+        {
+            var result = await app.RunAsync(["download", "-r"]);
+            if (result != 0)
+                return Error("No se pudieron descargar los resultados");
+        }
+
         var options = new JsonSerializerOptions(ModelSerializer.Options)
         {
             PropertyNameCaseInsensitive = true,
@@ -267,9 +275,7 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
             },
         }, Path.Combine(anomaliesDir, "users.json.gz"));
 
-        var electionFile = Path.Combine(settings.BaseDir, "election.json.gz");
-        if (File.Exists(electionFile) &&
-            await ModelSerializer.DeserializeAsync(electionFile) is { } election)
+        if (await ModelSerializer.DeserializeAsync(electionFile) is { } election)
         {
             var votes = election.GetBallots()
                 .Where(x => x.Kind == BallotKind.Positive)

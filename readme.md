@@ -29,6 +29,7 @@ OPTIONS:
     -v, --version    Prints version information
 
 COMMANDS:
+    anomaly     Detectar anomalias en los telegramas de la eleccion
     dataset     Descargar el dataset CSV completo de datos.gob.ar
     download    Descargar los resultados en formato JSON y telegramas con su metadata.
                 Opcionalmente filtrar por distrito(s)
@@ -109,6 +110,14 @@ OPTIONS:
     -o, --output                          Archivo de salida con el subset de datos. Por defecto 'slice.json' (o '.csv')
     -f, --format               Json       Formato del archivo a generar. Opciones: Json, Csv
 ```
+
+## anomaly
+
+Este comando detecta anomalias en los telegramas de la eleccion. 
+Si los telegramas no fueron previamente descargados, los descarga, 
+al igual que con el archivo de resultados (`download -r` y `telegram -d`).
+
+Las anomalias se reportan en `%appdata%\MenosRelato\elecciones`.
 
 ## Avanzado
 
