@@ -1,0 +1,232 @@
+{
+  "id": "6535c8222b669d5f7a6a1fdc",
+  "fileName": "1300602087X.tiff",
+  "imagenState": {
+    "state": "0",
+    "date": "2023-10-22T22:10:58.715-03:00"
+  },
+  "bloqueoState": {
+    "state": "0",
+    "date": "2023-10-22T22:10:58.715-03:00"
+  },
+  "incidenciaState": null,
+  "metadatos": {
+    "hash": "84f9eded9a8ee8af55e7c84db1fad9a0",
+    "pollingStationCode": "1300602087X",
+    "pages": [
+      {
+        "status": "0",
+        "scanningDate": "202310222210",
+        "scanningUser": "24913151",
+        "pageNumber": 1,
+        "transmissionDate": "20231022221053",
+        "transmissionUserId": "24913151",
+        "transmissionUserName": "Sebastian Munoz"
+      }
+    ]
+  },
+  "hash": "84f9eded9a8ee8af55e7c84db1fad9a0",
+  "scopeId": null,
+  "datos": {
+    "id": {
+      "idAmbito": {
+        "level": 8.0,
+        "codigo": "1300602087X",
+        "scopeId": {
+          "timestamp": 0.0,
+          "counter": 15525702.0,
+          "randomValue1": 1.0,
+          "randomValue2": 11985.0
+        }
+      },
+      "eleccionId": 1.0,
+      "envio": 46.0
+    },
+    "date": "Oct 22, 2023, 10:13:35 PM",
+    "fathers": [
+      {
+        "level": 7.0,
+        "name": "1 750 SIN NOMBRE",
+        "codigo": "130060004700291",
+        "scopeId": {
+          "timestamp": 0.0,
+          "counter": 13362469.0,
+          "randomValue1": 1182.0,
+          "randomValue2": -7285.0
+        }
+      },
+      {
+        "level": 6.0,
+        "name": "00047",
+        "codigo": "1300600047",
+        "scopeId": {
+          "timestamp": 0.0,
+          "counter": 3658076.0,
+          "randomValue1": 0.0,
+          "randomValue2": 775.0
+        }
+      },
+      {
+        "level": 4.0,
+        "name": "Maipú",
+        "codigo": "13006",
+        "scopeId": {
+          "timestamp": 0.0,
+          "counter": 130064.0,
+          "randomValue1": 0.0,
+          "randomValue2": 0.0
+        }
+      },
+      {
+        "level": 3.0,
+        "name": "Sección Segunda",
+        "codigo": "132",
+        "scopeId": {
+          "timestamp": 0.0,
+          "counter": 1323.0,
+          "randomValue1": 0.0,
+          "randomValue2": 0.0
+        }
+      },
+      {
+        "level": 2.0,
+        "name": "Mendoza",
+        "codigo": "13",
+        "scopeId": {
+          "timestamp": 0.0,
+          "counter": 132.0,
+          "randomValue1": 0.0,
+          "randomValue2": 0.0
+        }
+      },
+      {
+        "level": 1.0,
+        "name": "Argentina",
+        "codigo": "1",
+        "scopeId": {
+          "timestamp": 0.0,
+          "counter": 11.0,
+          "randomValue1": 0.0,
+          "randomValue2": 0.0
+        }
+      }
+    ],
+    "cargos": 0.0,
+    "showCargos": 0.0,
+    "census": 347.0,
+    "pollingCensus": 347.0,
+    "numStation": 1.0,
+    "pollingNumStation": 1.0,
+    "pollingPercCensus": 100.0,
+    "pollingPercStation": 100.0,
+    "electores": 275.0,
+    "sobres": 275.0,
+    "nulos": 4.0,
+    "percNulos": 2.28,
+    "recurridos": 0.0,
+    "percRecurridos": 0.0,
+    "blancos": 3.0,
+    "percBlancos": 1.71,
+    "comando": 0.0,
+    "percComando": 0.0,
+    "impugnados": 0.0,
+    "percImpugnados": 0.0,
+    "totalVotos": 175.0,
+    "afirmativos": 168.0,
+    "percAfirmativos": 96.0,
+    "abstencion": 172.0,
+    "percAbstencion": 49.56,
+    "valid": 171.0,
+    "percValid": 97.71,
+    "recImpCom": 0.0,
+    "percRecImpCom": 0.0,
+    "participation": 50.43,
+    "isCircus": 1.0,
+    "umbral": 0.0,
+    "calcPerc": "A",
+    "imagen": {
+      "timestamp": 1698023458.0,
+      "counter": 6954972.0,
+      "randomValue1": 2844317.0,
+      "randomValue2": 24442.0
+    },
+    "hayEmpates": false,
+    "partidos": [
+      {
+        "code": "134",
+        "name": "UNION POR LA PATRIA",
+        "codTel": "134",
+        "codLogo": "000134",
+        "votos": 67.0,
+        "perc": 39.88,
+        "percCarg": 39.88,
+        "cargos": 0.0,
+        "candidatos": [
+          "SERGIO TOMAS MASSA",
+          "AGUSTIN ROSSI"
+        ],
+        "listas": []
+      },
+      {
+        "code": "132",
+        "name": "JUNTOS POR EL CAMBIO",
+        "codTel": "132",
+        "codLogo": "000132",
+        "votos": 65.0,
+        "perc": 38.69,
+        "percCarg": 38.69,
+        "cargos": 0.0,
+        "candidatos": [
+          "PATRICIA BULLRICH",
+          "LUIS PETRI"
+        ],
+        "listas": []
+      },
+      {
+        "code": "135",
+        "name": "LA LIBERTAD AVANZA",
+        "codTel": "135",
+        "codLogo": "000135",
+        "votos": 21.0,
+        "perc": 12.5,
+        "percCarg": 12.5,
+        "cargos": 0.0,
+        "candidatos": [
+          "JAVIER GERARDO MILEI",
+          "VICTORIA VILLARRUEL"
+        ],
+        "listas": []
+      },
+      {
+        "code": "136",
+        "name": "FRENTE DE IZQUIERDA Y DE TRABAJADORES - UNIDAD",
+        "codTel": "136",
+        "codLogo": "000136",
+        "votos": 8.0,
+        "perc": 4.76,
+        "percCarg": 4.76,
+        "cargos": 0.0,
+        "candidatos": [
+          "MYRIAM TERESA BREGMAN",
+          "NICOLAS DEL CAÑO"
+        ],
+        "listas": []
+      },
+      {
+        "code": "133",
+        "name": "HACEMOS POR NUESTRO PAIS",
+        "codTel": "133",
+        "codLogo": "000133",
+        "votos": 7.0,
+        "perc": 4.16,
+        "percCarg": 4.16,
+        "cargos": 0.0,
+        "candidatos": [
+          "JUAN SCHIARETTI",
+          "FLORENCIO RANDAZZO"
+        ],
+        "listas": []
+      }
+    ]
+  }
+}

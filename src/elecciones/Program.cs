@@ -83,6 +83,7 @@ app.Configure(config =>
     config.AddCommand<UploadCommand>("upload").Advanced(advanced);
     config.AddCommand<DownloadCommand>("download").WithExample(["download --district 21"]); ;
     config.AddCommand<SliceCommand>("slice").WithExample(["slice --format csv --district 2 --district 21"]);
+    config.AddCommand<AnomalyCommand>("anomaly");
 
 #if DEBUG
     config.PropagateExceptions();

@@ -23,46 +23,6 @@ public static class ElectionExtensions
     public static IEnumerable<Ballot> GetBallots(this Circuit circuit) => circuit.Stations.SelectMany(b => b.Ballots);
 }
 
-/// <summary>
-/// Useful statistics by party and stats type.
-/// </summary>
-public class Stats
-{
-    /// <summary>
-    /// This is the sum of all values divided by the number of values. 
-    /// It gives a measure of the central location of the data.
-    /// </summary>
-    public Dictionary<string, double> Mean { get; init; } = new();
-    /// <summary>
-    /// This is the middle value in a sorted list of values. 
-    /// It divides the data into two halves and is less affected by outliers than the mean.
-    /// </summary>
-    public Dictionary<string, double> Median { get; init; } = new();
-    /// <summary>
-    /// First quartile (25th percentile)
-    /// </summary>
-    public Dictionary<string, double> LowerQuartile { get; init; } = new();
-    /// <summary>
-    /// Third quartile (75th percentile)
-    /// </summary>
-    public Dictionary<string, double> UpperQuartile { get; init; } = new();
-    /// <summary>
-    /// The IQR is the range between the first quartile (25th percentile) and the 
-    /// third quartile (75th percentile), and is used to measure statistical dispersion.
-    /// </summary>
-    public Dictionary<string, double> InterquartileRange { get; init; } = new();
-    /// <summary>
-    /// This measures the amount of variation or dispersion in the set of values. 
-    /// A low standard deviation indicates that values are close to the mean, while 
-    /// a high standard deviation indicates that the values are spread out over a wider range.
-    /// </summary>
-    public Dictionary<string, double> StandardDeviation { get; init; } = new();
-    /// <summary>
-    ///  This is the square of the standard deviation. It gives a measure of how the data is spread out around the mean.
-    /// </summary>
-    public Dictionary<string, double> Variance { get; init; } = new();
-}
-
 public record Election(int Year, string Kind)
 {
     readonly IndexedCollection<string, Party> parties = new(x => x.Name);
@@ -70,7 +30,7 @@ public record Election(int Year, string Kind)
     IndexedCollection<int, District>? districts;
 
     public string BaseUrl => "https://resultados.gob.ar";
-    public string StorageUrl => Constants.AzureStorageUrl + "elecciones";
+    public string StorageUrl => Constants.AzureStorageUrl + "/elecciones";
 
     [JsonIgnore, Newtonsoft.Json.JsonIgnore]
     public IList<Party> Parties => parties;
@@ -314,9 +274,9 @@ public record Ballot(string Kind, int Count, string Position, string? Party, str
 }
 
 public record Telegram(string Id, DateTime Date, 
-    [property: JsonPropertyName("web")] string Url,
+    [property: JsonPropertyName("web")] string PageUrl,
     [property: JsonPropertyName("url")] string TelegramUrl,
-    DistrictId? District, SectionId? Section, string? Circuit, string Local,
+    DistrictId District, SectionId Section, string Circuit, LocalId Local,
     StationInfo Station, PartyInfo[] Parties, UserId User)
 {
     public string? Anomaly { get; set; }
@@ -325,6 +285,7 @@ public record Telegram(string Id, DateTime Date,
 
 public record DistrictId(int Id, string Name);
 public record SectionId(int Id, string Name);
+public record LocalId(string Id, string Name);
 public record StationInfo(int Census, int Electors, int Envelopes, 
     int SumVotes, int TotalVotes, int Valid, int Affirmative, 
     int Blank, int Null, int Appealed, int Contested, int Command,

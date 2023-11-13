@@ -1,0 +1,54 @@
+def toid: . | tonumber | tostring;
+{ 
+    id: .datos.id.idAmbito.codigo, 
+    date: .datos.date,
+    url: ["https://menosrelato.blob.core.windows.net/elecciones/2023/general/telegram", (.datos.id.idAmbito.codigo[0:2] | toid), (.datos.id.idAmbito.codigo[2:5] | toid), (.fileName)] | join("/"),
+    web: ["https://resultados.gob.ar", .url] | add,
+    district: 
+    {
+        id: .datos.id.idAmbito.codigo[0:2] | tonumber,
+        name: .datos.fathers[-2].name
+    },
+    section:
+    {
+        id: .datos.id.idAmbito.codigo[2:5] | tonumber,
+        name: .datos.fathers[-3].name
+    },
+    circuit: .datos.fathers[-4].name, 
+    local: 
+    {
+        id: .datos.fathers[0].codigo,
+        name: .datos.fathers[0].name 
+    },
+    station: 
+    {
+        census: .datos.census | floor,
+        electors: .datos.electores | floor,
+        envelopes: .datos.sobres | floor,
+        valid: .datos.valid | floor,
+        affirmative: .datos.afirmativos | floor,
+        blank: .datos.blancos | floor,
+        null: .datos.nulos | floor,
+        appealed: .datos.recurridos | floor,
+        contested: .datos.impugnados | floor,
+        command: .datos.comando | floor,
+        percAbstention: .datos.percAbstencion,
+        percBlank: .datos.percBlancos,
+        percNull: .datos.percNulos,
+        percAppealed: .datos.percRecurridos,
+        percContested: .datos.percImpugnados,
+        percCommand: .datos.percComando,
+        sumVotes: [.datos.partidos[].votos, .datos.nulos, .datos.blancos, .datos.recurridos, .datos.impugnados, .datos.commando] | add | floor,
+        totalVotes: .datos.totalVotos | floor
+    },
+    parties: (.datos.partidos | map({ 
+        name: .name, 
+        votes: .votos | floor, 
+        perc: .perc
+    })),
+    user: 
+    {
+        id: .metadatos.pages[0].transmissionUserId, 
+        name: .metadatos.pages[0].transmissionUserName 
+    }
+}

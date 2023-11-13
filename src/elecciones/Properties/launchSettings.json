@@ -2,7 +2,7 @@
   "profiles": {
     "elecciones": {
       "commandName": "Project",
-      "commandLineArgs": "download -d 24"
+      "commandLineArgs": "anomaly"
     }
   }
 }

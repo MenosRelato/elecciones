@@ -6,11 +6,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+    <PackageReference Include="CliWrap" Version="3.6.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.7.2" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.0.2" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" PrivateAssets="all" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.0.2" />
     <PackageReference Include="ThisAssembly.Project" Version="1.4.1" PrivateAssets="all" />
   </ItemGroup>
 
@@ -21,6 +21,11 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="Xunit.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="httpenv.json.user" />
+    <Content Include="http-client.env.json.user" />
   </ItemGroup>
 
 </Project>

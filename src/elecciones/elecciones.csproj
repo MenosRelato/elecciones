@@ -44,10 +44,13 @@
     <PackageReference Include="chromium" Version="2023.10.11" />
     <PackageReference Include="chromium.win-x64" Version="2023.10.11" />
     <PackageReference Include="Microsoft.Playwright" Version="1.38.0" />
+    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.0.2" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="db.sql" />
+    <EmbeddedResource Include="jq.txt" />
   </ItemGroup>
 
   <ItemGroup>

@@ -60,6 +60,7 @@ public static class ModelSerializer
     static async Task SerializeAsync<T>(T model, Stream stream) => await JsonSerializer.SerializeAsync(stream, model, new JsonSerializerOptions
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
+        NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals,
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         // We're zipping anyway, indenting won't take much extra
