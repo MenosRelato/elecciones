@@ -278,11 +278,12 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
         if (await ModelSerializer.DeserializeAsync(electionFile) is { } election)
         {
             var votes = election.GetBallots()
-                .Where(x => x.Kind == BallotKind.Positive)
+                .Where(x => x.Kind == BallotKind.Positive && x.Position == "PRESIDENTE Y VICE")
                 .GroupBy(x => x.Party!, x => x.Count)
-                .OrderByDescending(x => x.Sum())
+                .ToDictionary(x => x.Key, x => x.Sum())
+                .OrderByDescending(x => x.Value)
                 .Take(5)
-                .ToDictionary(x => x.Key, x => x.Sum());
+                .ToDictionary();
 
             var anomalyVotes = anomalies.SelectMany(x => x.Parties.Select(p => new { p.Name, p.Votes }))
                 .GroupBy(x => x.Name)
