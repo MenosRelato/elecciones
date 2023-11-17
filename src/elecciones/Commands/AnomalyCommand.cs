@@ -196,33 +196,55 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
                 anomalies?.Add(telegram);
         }
 
-        foreach (var district in telegrams.Where(x => x.TelegramUrl != null).GroupBy(x => x.District))
+        await progress.AutoClear(true).StartAsync(async ctx =>
         {
-            var dstats = Stats.Calculate(district);
-            await ModelSerializer.SerializeAsync(dstats, Path.Combine(statsDir, $"{district.Key.Id:D2}.json"));
+            var districts = telegrams.Where(x => x.TelegramUrl != null).GroupBy(x => x.District);
+            var dtask = ctx.AddTask("Analizando distritos", new ProgressTaskSettings { MaxValue = districts.Count() });
 
-            foreach (var section in district.GroupBy(x => x.Section))
+            foreach (var district in districts)
             {
-                var sstats = Stats.Calculate(section);
-                await ModelSerializer.SerializeAsync(dstats, Path.Combine(statsDir, $"{district.Key.Id:D2}-{section.Key.Id:D3}.json"));
+                var dstats = Stats.Calculate(district);
+                await ModelSerializer.SerializeAsync(dstats, Path.Combine(statsDir, $"{district.Key.Id:D2}.json"));
 
-                foreach (var circuit in section.GroupBy(x => x.Circuit))
+                var sections = district.GroupBy(x => x.Section);
+                var stask = ctx.AddTask($"Analizando distrito {district.Key.Name}", new ProgressTaskSettings { MaxValue = sections.Count() });
+
+                foreach (var section in sections)
                 {
-                    var cstats = Stats.Calculate(circuit);
-                    await ModelSerializer.SerializeAsync(dstats, Path.Combine(statsDir, $"{district.Key.Id:D2}-{section.Key.Id:D3}-{circuit.Key.Replace(' ', '_')}.json"));
+                    var sstats = Stats.Calculate(section);
+                    await ModelSerializer.SerializeAsync(dstats, Path.Combine(statsDir, $"{district.Key.Id:D2}-{section.Key.Id:D3}.json"));
 
-                    foreach (var local in circuit.GroupBy(x => x.Local))
+                    var circuits = section.GroupBy(x => x.Circuit);
+
+                    foreach (var circuit in circuits)
                     {
-                        var lstats = Stats.Calculate(local);
-                        await ModelSerializer.SerializeAsync(dstats, Path.Combine(statsDir, $"{local.Key.Id}.json"));
-                        AddAnomalies(lstats.FindAnomalies(local, "Establecimiento"));
+                        var cstats = Stats.Calculate(circuit);
+                        await ModelSerializer.SerializeAsync(dstats, Path.Combine(statsDir, $"{district.Key.Id:D2}-{section.Key.Id:D3}-{circuit.Key.Replace(' ', '_')}.json"));
+
+                        foreach (var local in circuit.GroupBy(x => x.Local))
+                        {
+                            var lstats = Stats.Calculate(local);
+                            await ModelSerializer.SerializeAsync(dstats, Path.Combine(statsDir, $"{local.Key.Id}.json"));
+                            AddAnomalies(lstats.FindAnomalies(local, "Establecimiento"));
+                        }
+
+                        AddAnomalies(cstats.FindAnomalies(circuit, "Circuito"));
                     }
-                    AddAnomalies(cstats.FindAnomalies(circuit, "Circuito"));
+                    
+                    AddAnomalies(sstats.FindAnomalies(section, "Seccion"));
+                    stask.Increment(1);
                 }
-                AddAnomalies(sstats.FindAnomalies(section, "Seccion"));
+
+                stask.Value = stask.MaxValue;
+                stask.StopTask();
+
+                AddAnomalies(dstats.FindAnomalies(district, "Distrito"));
+                dtask.Increment(1);
             }
-            AddAnomalies(dstats.FindAnomalies(district, "Distrito"));
-        }
+
+            dtask.Value = dtask.MaxValue;
+            dtask.StopTask();
+        });
 
         var anomaliesDir = Path.Combine(settings.BaseDir, "anomalies");
         Directory.CreateDirectory(anomaliesDir);
@@ -238,7 +260,7 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
             }, Path.Combine(anomaliesDir, $"{anomaly.Id}.json.gz"));
         }
 
-        WriteLine($"Anomalies {Math.Truncate(100d * anomalies.Count / telegrams.Count * 100) / 100}%");
+        MarkupLine($":backhand_index_pointing_right: Anomalías {Math.Truncate(100d * anomalies.Count / telegrams.Count * 100) / 100}% ({anomalies.Count:N0} de {telegrams.Count:N0} telegramas)");
 
         // by user
         var userAnomalies = anomalies
@@ -301,10 +323,10 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
             // Each row is a party
             var table = new Table()
                 .AddColumn("Partido")
-                .AddColumn("Votos")
-                .AddColumn("Porcentaje")
-                .AddColumn("Votos ajustados")
-                .AddColumn("Porcentaje ajustado");
+                .AddColumn("Votos totales")
+                .AddColumn("Votos s/anomalías")
+                .AddColumn("Porcentaje total")
+                .AddColumn("Porcentaje s/anomalías");
 
             var totalVotes = votes.Sum(x => x.Value);
             var totalAnomalyVotes = anomalyVotes.Sum(x => x.Value);
@@ -326,8 +348,8 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
                 table.AddRow(
                     party.Key!,
                     votes[party.Key].ToString("N"),
-                    $"{votesPercentage}%",
                     adjustedVotes.ToString("N"),
+                    $"{votesPercentage}%",
                     $"{adjustedVotesPercentage}%");
             }
 
