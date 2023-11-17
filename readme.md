@@ -8,7 +8,7 @@ https://datos.gob.ar/ (actualmente, los resultados para [Elecciones 2023](https:
 
 Resumen de deteccion de anomalias:
 
-![Anomalias](https://github.com/MenosRelato/elecciones/blob/main/assets/anomalias.png?raw=true)]
+![Anomalias](https://github.com/MenosRelato/elecciones/blob/main/assets/anomalias.png?raw=true)
 
 La detección de anomalías se efectua utilizando el [rango intercuartílico](https://barcelonageeks.com/rango-intercuartilico-para-detectar-valores-atipicos-en-los-datos/) 
 (IQR) del % de votos obtenido por un partido en una mesa, y se reportan las mesas que se 
