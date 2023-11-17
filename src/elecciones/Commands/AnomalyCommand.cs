@@ -98,7 +98,9 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
 
         var telegramFiles = Directory
             .EnumerateFiles(baseDir, "*.tiff", SearchOption.AllDirectories)
-            .Select(x => Path.ChangeExtension(x, statsDir));
+            .Select(x => Path.ChangeExtension(x, ".json.gz"));
+
+        Directory.CreateDirectory(statsDir);
 
         var statsFiles = Directory.EnumerateFiles(statsDir, "*.json.gz", SearchOption.AllDirectories);
 
@@ -235,6 +237,8 @@ public class AnomalyCommand(ICommandApp app) : AsyncCommand<AnomalyCommand.Setti
                 TelegramUrl = Constants.AzureStorageUrl + anomaly.TelegramUrl,
             }, Path.Combine(anomaliesDir, $"{anomaly.Id}.json.gz"));
         }
+
+        WriteLine($"Anomalies {Math.Truncate(100d * anomalies.Count / telegrams.Count * 100) / 100}%");
 
         // by user
         var userAnomalies = anomalies
