@@ -6,6 +6,10 @@ los comicios en Argentina.
 Para eso, utiliza la información disponible públicamente en https://resultados.gob.ar/ y 
 https://datos.gob.ar/ (actualmente, los resultados para [Elecciones 2023](https://datos.gob.ar/dataset/dine-resultados-provisionales-elecciones-2023).
 
+Resumen de deteccion de anomalias:
+
+![Anomalias](https://github.com/MenosRelato/elecciones/blob/main/assets/anomalias.png?raw=true)]
+
 # Instalación
 
 La herramienta principal es una aplicación de consola que utiliza [.NET](https://get.dot.net), 
