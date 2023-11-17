@@ -10,6 +10,12 @@ Resumen de deteccion de anomalias:
 
 ![Anomalias](https://github.com/MenosRelato/elecciones/blob/main/assets/anomalias.png?raw=true)]
 
+La detección de anomalías se efectua utilizando el [rango intercuartílico](https://barcelonageeks.com/rango-intercuartilico-para-detectar-valores-atipicos-en-los-datos/) 
+(IQR) del % de votos obtenido por un partido en una mesa, y se reportan las mesas que se 
+encuentran fuera de ese rango, ya sea dentro de un mismo establecimiento, dentro del 
+circuito o la sección electoral.
+
+
 # Instalación
 
 La herramienta principal es una aplicación de consola que utiliza [.NET](https://get.dot.net), 
